@@ -1,0 +1,12 @@
+{
+  "name": "EDOS Poultry360",
+  "short_name": "Poultry360",
+  "description": "Manage every flock. Every farmer. Every decision.",
+  "start_url": "/app/home",
+  "display": "standalone",
+  "background_color": "#faf8f3",
+  "theme_color": "#1d4d43",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml" }
+  ]
+}
