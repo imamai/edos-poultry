@@ -92,9 +92,19 @@ export function downloadSaleDocumentPdf(doc: SaleDocument) {
     head: [["Description", "Qty", "Unit price", "Total"]],
     body: doc.lines.map((l) => [l.description, l.quantity, formatMoney(l.unitPrice, doc.currency), formatMoney(l.lineTotal, doc.currency)]),
     margin: { left: MARGIN_X, right: 595 - PAGE_RIGHT },
-    styles: { fontSize: 9, cellPadding: 4 },
+    styles: { fontSize: 9, cellPadding: 4, overflow: "ellipsize" },
     headStyles: { fillColor: [29, 77, 67] },
-    columnStyles: { 1: { halign: "right" }, 2: { halign: "right" }, 3: { halign: "right" } },
+    // Fixed widths, not autoTable's default content-based auto-sizing --
+    // a long quantity string like "5.01 trays" would otherwise widen
+    // that column unpredictably and throw the header labels above it out
+    // of visual alignment with the data below.
+    tableWidth: PAGE_RIGHT - MARGIN_X,
+    columnStyles: {
+      0: { cellWidth: 200, halign: "left" },
+      1: { cellWidth: 90, halign: "right" },
+      2: { cellWidth: 105, halign: "right" },
+      3: { cellWidth: 120, halign: "right" },
+    },
   });
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
