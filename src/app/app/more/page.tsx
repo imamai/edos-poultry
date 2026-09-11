@@ -14,6 +14,7 @@ import {
   FileBarChart,
   Sparkles,
   Bot,
+  LayoutDashboard,
 } from "lucide-react";
 import { getMyMembership, getMyFarmerContext } from "@/lib/data/farmer";
 
@@ -46,9 +47,14 @@ export default async function MorePage() {
   if (isOwnerOrAdmin) {
     items.push({ href: "/app/billing", label: "Billing", desc: "Plan, usage, and payments", icon: CreditCard });
     items.push({ href: "/app/content", label: "Content", desc: "Advice articles and announcements", icon: FileText });
-    // The admin bottom nav already has a dedicated Reports tab — only add
-    // it here for a farmer-owner, whose bottom nav doesn't.
+    // The admin bottom nav already has dedicated Network/Team/Reports tabs
+    // — only add them here for a farmer-owner (has their own farmer
+    // profile, so the bottom nav shows the farmer variant instead), who'd
+    // otherwise have no way to reach the farmers they manage or the
+    // network-wide rollup at all.
     if (farmerContext) {
+      items.push({ href: "/app/network", label: "Network", desc: "Roll-up across every farmer you manage", icon: LayoutDashboard });
+      items.push({ href: "/app/team", label: "Team", desc: "Farmers you manage and who has access", icon: Users });
       items.push({ href: "/app/reports", label: "Reports", desc: "Production, mortality, and financial reports", icon: FileBarChart });
     }
   }
