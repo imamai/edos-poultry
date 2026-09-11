@@ -370,14 +370,30 @@ mean very different amounts of engineering:
   50), a stock-out and a negative adjustment (confirmed it correctly
   reached 38), a customer, a sale, and an expense — all inserted
   successfully under RLS, then cleaned up.
-- **Phase 7 migrations (`0017`–`0020`) and `seed.sql`'s new plan rows are
-  written but NOT applied or RLS-verified** — unlike every phase before it,
-  this session had no live Supabase MCP connection to the `edos_db`
-  project. Apply them and re-seed, then spot-check the same way every prior
-  phase was: confirm a non-member sees zero rows of another tenant's
+- **Phase 7 migrations (`0017`–`0021`) were applied and RLS-verified once
+  the Supabase MCP connection came back** (it wasn't available for the
+  session that wrote them). Live-verified: `poultryedos_subscription_plans`
+  seeded with the 4 plans; the pre-existing tenant backfilled with a trial
+  subscription (the auto-create trigger only fires on new tenant inserts,
+  so a tenant created before `0017` needed one); a real new tenant created
+  as an impersonated `authenticated` user correctly auto-got a trial
+  subscription on the starter plan, readable by its owner under RLS; an
+  unrelated authenticated user confirmed to see zero rows across
   `poultryedos_subscriptions`/`poultryedos_mpesa_transactions`/
-  `poultryedos_notifications`, and confirm the trial-subscription trigger
-  actually fires on a new tenant signup.
+  `poultryedos_sms_logs`/`poultryedos_notifications`/tenant-scoped
+  `poultryedos_announcements`; and — the specific attack this schema is
+  designed to prevent — a tenant owner inserting their own M-Pesa
+  transaction, then trying to mark it `success` themselves, was silently
+  a no-op (no RLS policy grants `UPDATE` to any authenticated role; only
+  the service-role callback route can transition status). All test data
+  cleaned up afterward. **One real bug was caught by Supabase's own
+  security advisor and fixed before it could be exploited**:
+  `poultryedos_create_trial_subscription()` (migration `0017`) was missing
+  the explicit `revoke execute ... from public, anon, authenticated` every
+  other `SECURITY DEFINER` trigger function in this schema already has
+  (see `0004`/`0005`/`0011`) — without it, `anon` could invoke it directly
+  via `/rest/v1/rpc/poultryedos_create_trial_subscription`. Fixed in
+  `0021` and confirmed gone from the advisor report afterward.
 - **Two more real bugs were caught this way, not left for you to find**:
   (1) `unique(tenant_id, code)` / `unique(tenant_id, name)` on the global
   reference tables (poultry types, expense categories) never actually
