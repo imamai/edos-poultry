@@ -6,6 +6,7 @@ import type {
   HealthEvent,
   InventoryItem,
   PurchaseOrder,
+  PurchaseOrderItem,
   BiosecurityCheck,
   Sale,
   Supplier,
@@ -91,19 +92,21 @@ export async function getSuppliers(tenantId: string): Promise<Supplier[]> {
   return (data ?? []) as Supplier[];
 }
 
-export async function getRecentPurchaseOrders(
-  tenantId: string,
-  limit = 20,
-): Promise<(PurchaseOrder & { poultryedos_suppliers: { name: string } | null })[]> {
+export type PurchaseOrderWithDetails = PurchaseOrder & {
+  poultryedos_suppliers: { name: string } | null;
+  poultryedos_purchase_order_items: PurchaseOrderItem[];
+};
+
+export async function getRecentPurchaseOrders(tenantId: string, limit = 20): Promise<PurchaseOrderWithDetails[]> {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("poultryedos_purchase_orders")
-    .select("*, poultryedos_suppliers(name)")
+    .select("*, poultryedos_suppliers(name), poultryedos_purchase_order_items(*)")
     .eq("tenant_id", tenantId)
     .order("order_date", { ascending: false })
     .limit(limit);
   if (error) throw error;
-  return (data ?? []) as unknown as (PurchaseOrder & { poultryedos_suppliers: { name: string } | null })[];
+  return (data ?? []) as unknown as PurchaseOrderWithDetails[];
 }
 
 export async function getHealthEvents(flockId: string): Promise<HealthEvent[]> {

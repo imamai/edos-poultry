@@ -307,18 +307,30 @@ export interface Supplier {
 
 export type PurchaseOrderStatus = "ordered" | "received" | "cancelled";
 
+/** Header only — line items live in poultryedos_purchase_order_items
+ * (spec §32). total_cost_cents is trigger-maintained, summed from those
+ * lines, the same "the app never computes a derived value by hand"
+ * pattern as poultryedos_flocks.current_quantity. */
 export interface PurchaseOrder {
   id: string;
   tenant_id: string;
   supplier_id: string | null;
-  item_id: string | null;
-  item_name: string;
-  quantity: number;
-  unit_cost_cents: number;
   total_cost_cents: number;
   order_date: string;
   received_date: string | null;
   status: PurchaseOrderStatus;
+}
+
+export interface PurchaseOrderItem {
+  id: string;
+  tenant_id: string;
+  purchase_order_id: string;
+  item_id: string | null;
+  item_name: string;
+  quantity: number;
+  unit_cost_cents: number;
+  line_total_cost_cents: number;
+  created_at: string;
 }
 
 export type InviteStatus = "pending" | "accepted" | "revoked" | "expired";

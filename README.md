@@ -266,6 +266,31 @@ pinned and labeled with farmer name + status, above the existing list.
 deferred" below on why (no farm GPS is ever captured anywhere yet, so that
 map would only ever render empty).
 
+### Multi-line purchase orders (spec §32)
+
+Migration 0010 deliberately kept a PO as one item from one supplier, with
+an explicit note to revisit "when there's an actual business ordering many
+items in one purchase, not before." `poultryedos_purchase_orders` had zero
+rows in production, so migration `0024` reshapes it directly: the table is
+now a header (supplier, status, dates) with line items in a new
+`poultryedos_purchase_order_items` table.
+
+- `total_cost_cents` on the header is trigger-maintained — summed from
+  line items whenever they change, the same "the app never computes a
+  derived value by hand" pattern as `poultryedos_flocks.current_quantity`.
+- `poultryedos_create_purchase_order(tenant_id, supplier_id, items jsonb)`
+  creates the header and every line atomically in one RPC call, mirroring
+  `poultryedos_create_tenant`'s "one call, one transaction" shape — a
+  client-side "insert header, then insert N lines" would risk an orphaned
+  empty order if the line insert failed partway through.
+- Marking a PO "received" now stocks every line item with an `item_id`,
+  not just one — verified live: a 2-line order (one tracked in inventory,
+  one not) correctly created exactly one stock-in transaction, for the
+  tracked line only.
+- The Inventory page's purchase-order form now has an "Add another item"
+  button per order; the order list shows every line and the
+  trigger-computed total.
+
 ### Who is the "main" farmer?
 
 Deliberately: there isn't one, and we didn't add a flag pretending there
@@ -386,11 +411,6 @@ mean very different amounts of engineering:
   explicitly Level-1 rule-based, per spec §51 — a same-flock
   trailing-average comparison, not a model, worded as "worth a closer
   look" / "veterinary review recommended," never a diagnosis.
-- **Multi-line purchase orders**: each PO is one item from one supplier,
-  which covers the real smallholder/early-commercial workflow (a bag of
-  feed, a vial of vaccine). A multi-line PO system is real added
-  complexity worth building when there's an actual business ordering many
-  items in one purchase, not before.
 - **Real brand icon assets**: `public/icon.svg` is a placeholder mark, not
   real EDOS Poultry360 branding.
 
@@ -464,6 +484,16 @@ mean very different amounts of engineering:
   within the (slightly loosened) starter limits and its subscription
   reads as active — nothing about this change affects it today. All test
   data and the throwaway auth user were deleted afterward.
+- **Multi-line purchase orders (migration `0024`) were live-verified** using
+  the same synthetic, disposable test user pattern: a 2-line order (one
+  item linked to a tracked inventory item, one not) correctly computed a
+  total of both lines' cost; marking it "received" created exactly one
+  inventory transaction (only for the tracked line) and moved
+  `stock_on_hand` from 0 to the ordered quantity; deleting a line item
+  correctly recomputed the header total down; an empty-items order was
+  correctly rejected by the RPC; an unrelated user saw zero rows of the
+  new `poultryedos_purchase_order_items` table. No new security-advisor
+  findings. All test data and the throwaway auth user deleted afterward.
 - **Two more real bugs were caught this way, not left for you to find**:
   (1) `unique(tenant_id, code)` / `unique(tenant_id, name)` on the global
   reference tables (poultry types, expense categories) never actually

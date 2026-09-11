@@ -2,8 +2,10 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { Plus, X } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import type { InventoryCategory, InventoryItem, PurchaseOrder, Supplier } from "@/lib/database.types";
+import type { InventoryCategory, InventoryItem, Supplier } from "@/lib/database.types";
+import type { PurchaseOrderWithDetails } from "@/lib/data/business";
 import { formatMoney } from "@/lib/money";
 
 type Tab = "stock" | "purchases";
@@ -19,7 +21,7 @@ export function InventoryManager({
   currency: string;
   items: InventoryItem[];
   suppliers: Supplier[];
-  purchaseOrders: (PurchaseOrder & { poultryedos_suppliers: { name: string } | null })[];
+  purchaseOrders: PurchaseOrderWithDetails[];
 }) {
   const [tab, setTab] = useState<Tab>("stock");
 
@@ -240,6 +242,17 @@ function LogTransactionForm({ tenantId, itemId, onDone }: { tenantId: string; it
   );
 }
 
+interface DraftLine {
+  itemId: string;
+  itemName: string;
+  quantity: string;
+  unitCost: string;
+}
+
+function emptyLine(): DraftLine {
+  return { itemId: "", itemName: "", quantity: "", unitCost: "" };
+}
+
 function PurchasesTab({
   tenantId,
   currency,
@@ -251,18 +264,29 @@ function PurchasesTab({
   currency: string;
   suppliers: Supplier[];
   items: InventoryItem[];
-  purchaseOrders: (PurchaseOrder & { poultryedos_suppliers: { name: string } | null })[];
+  purchaseOrders: PurchaseOrderWithDetails[];
 }) {
   const router = useRouter();
   const [adding, setAdding] = useState(false);
   const [supplierId, setSupplierId] = useState("");
   const [newSupplierName, setNewSupplierName] = useState("");
-  const [itemId, setItemId] = useState("");
-  const [itemName, setItemName] = useState("");
-  const [quantity, setQuantity] = useState("");
-  const [unitCost, setUnitCost] = useState("");
+  const [lines, setLines] = useState<DraftLine[]>([emptyLine()]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  function updateLine(index: number, patch: Partial<DraftLine>) {
+    setLines((prev) => prev.map((l, i) => (i === index ? { ...l, ...patch } : l)));
+  }
+
+  function addLine() {
+    setLines((prev) => [...prev, emptyLine()]);
+  }
+
+  function removeLine(index: number) {
+    setLines((prev) => (prev.length > 1 ? prev.filter((_, i) => i !== index) : prev));
+  }
+
+  const orderTotalCents = lines.reduce((sum, l) => sum + Math.round((Number(l.quantity) || 0) * (Number(l.unitCost) || 0) * 100), 0);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -285,19 +309,20 @@ function PurchasesTab({
       resolvedSupplierId = (data as { id: string }).id;
     }
 
-    const qty = Number(quantity);
-    const cost = Math.round(Number(unitCost) * 100);
-    const selectedItem = items.find((i) => i.id === itemId);
+    const payloadItems = lines.map((l) => {
+      const selectedItem = items.find((i) => i.id === l.itemId);
+      return {
+        item_id: l.itemId || null,
+        item_name: selectedItem?.name ?? l.itemName,
+        quantity: Number(l.quantity),
+        unit_cost_cents: Math.round(Number(l.unitCost) * 100),
+      };
+    });
 
-    const { error } = await supabase.from("poultryedos_purchase_orders").insert({
-      tenant_id: tenantId,
-      supplier_id: resolvedSupplierId,
-      item_id: itemId || null,
-      item_name: selectedItem?.name ?? itemName,
-      quantity: qty,
-      unit_cost_cents: cost,
-      total_cost_cents: Math.round(qty * cost),
-      status: "ordered",
+    const { error } = await supabase.rpc("poultryedos_create_purchase_order", {
+      p_tenant_id: tenantId,
+      p_supplier_id: resolvedSupplierId,
+      p_items: payloadItems,
     });
 
     setBusy(false);
@@ -305,9 +330,7 @@ function PurchasesTab({
       setError(error.message);
       return;
     }
-    setQuantity("");
-    setUnitCost("");
-    setItemName("");
+    setLines([emptyLine()]);
     setNewSupplierName("");
     setAdding(false);
     router.refresh();
@@ -362,55 +385,81 @@ function PurchasesTab({
               />
             )}
           </div>
-          <div>
-            <label className="text-sm font-medium text-ink-soft">Item</label>
-            <select
-              value={itemId}
-              onChange={(e) => setItemId(e.target.value)}
-              className="mt-1 w-full rounded-lg border border-line-strong px-3 py-2 text-sm outline-none focus:border-primary"
-            >
-              <option value="">— Not tracked in inventory —</option>
-              {items.map((i) => (
-                <option key={i.id} value={i.id}>
-                  {i.name}
-                </option>
-              ))}
-            </select>
-            {!itemId && (
-              <input
-                value={itemName}
-                onChange={(e) => setItemName(e.target.value)}
-                placeholder="What are you buying?"
-                className="mt-2 w-full rounded-lg border border-line-strong px-3 py-2 text-sm outline-none focus:border-primary"
-              />
-            )}
+
+          <div className="space-y-3">
+            {lines.map((line, index) => (
+              <div key={index} className="rounded-lg border border-line-strong p-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-medium text-ink-faint">Item {index + 1}</label>
+                  {lines.length > 1 && (
+                    <button type="button" onClick={() => removeLine(index)} className="text-ink-faint hover:text-danger">
+                      <X className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
+                <select
+                  value={line.itemId}
+                  onChange={(e) => updateLine(index, { itemId: e.target.value })}
+                  className="mt-1 w-full rounded-lg border border-line-strong px-3 py-2 text-sm outline-none focus:border-primary"
+                >
+                  <option value="">— Not tracked in inventory —</option>
+                  {items.map((i) => (
+                    <option key={i.id} value={i.id}>
+                      {i.name}
+                    </option>
+                  ))}
+                </select>
+                {!line.itemId && (
+                  <input
+                    value={line.itemName}
+                    onChange={(e) => updateLine(index, { itemName: e.target.value })}
+                    placeholder="What are you buying?"
+                    className="mt-2 w-full rounded-lg border border-line-strong px-3 py-2 text-sm outline-none focus:border-primary"
+                  />
+                )}
+                <div className="mt-2 grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-xs font-medium text-ink-faint">Quantity</label>
+                    <input
+                      type="number"
+                      required
+                      min={0}
+                      step="0.1"
+                      value={line.quantity}
+                      onChange={(e) => updateLine(index, { quantity: e.target.value })}
+                      className="mt-1 w-full rounded-lg border border-line-strong px-3 py-2 text-sm outline-none focus:border-primary"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs font-medium text-ink-faint">Unit cost ({currency})</label>
+                    <input
+                      type="number"
+                      required
+                      min={0}
+                      step="0.01"
+                      value={line.unitCost}
+                      onChange={(e) => updateLine(index, { unitCost: e.target.value })}
+                      className="mt-1 w-full rounded-lg border border-line-strong px-3 py-2 text-sm outline-none focus:border-primary"
+                    />
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-sm font-medium text-ink-soft">Quantity</label>
-              <input
-                type="number"
-                required
-                min={0}
-                step="0.1"
-                value={quantity}
-                onChange={(e) => setQuantity(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-line-strong px-3 py-2 text-sm outline-none focus:border-primary"
-              />
-            </div>
-            <div>
-              <label className="text-sm font-medium text-ink-soft">Unit cost ({currency})</label>
-              <input
-                type="number"
-                required
-                min={0}
-                step="0.01"
-                value={unitCost}
-                onChange={(e) => setUnitCost(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-line-strong px-3 py-2 text-sm outline-none focus:border-primary"
-              />
-            </div>
+
+          <button
+            type="button"
+            onClick={addLine}
+            className="flex items-center gap-1.5 text-sm text-primary hover:underline"
+          >
+            <Plus className="h-4 w-4" /> Add another item
+          </button>
+
+          <div className="flex items-center justify-between rounded-lg bg-paper px-3 py-2 text-sm">
+            <span className="text-ink-faint">Order total</span>
+            <span className="font-medium text-ink">{formatMoney(orderTotalCents, currency)}</span>
           </div>
+
           {error && <p className="text-sm text-danger">{error}</p>}
           <div className="flex gap-3">
             <button type="button" onClick={() => setAdding(false)} className="rounded-full border border-line-strong px-4 py-2 text-sm text-ink-soft">
@@ -430,25 +479,31 @@ function PurchasesTab({
           </p>
         )}
         {purchaseOrders.map((po) => (
-          <div key={po.id} className="flex items-center justify-between rounded-xl border border-line bg-paper-raised px-4 py-3 text-sm">
-            <div>
-              <p className="font-medium text-ink">{po.item_name}</p>
-              <p className="text-xs text-ink-faint">
-                {po.quantity} · {formatMoney(po.total_cost_cents, currency)}
-                {po.poultryedos_suppliers && ` · ${po.poultryedos_suppliers.name}`}
-              </p>
+          <div key={po.id} className="rounded-xl border border-line bg-paper-raised px-4 py-3 text-sm">
+            <div className="flex items-start justify-between">
+              <div>
+                <p className="font-medium text-ink">
+                  {po.poultryedos_purchase_order_items.length}{" "}
+                  {po.poultryedos_purchase_order_items.length === 1 ? "item" : "items"}
+                  {po.poultryedos_suppliers && ` · ${po.poultryedos_suppliers.name}`}
+                </p>
+                <p className="mt-1 text-xs text-ink-faint">
+                  {po.poultryedos_purchase_order_items.map((i) => `${i.item_name} (${i.quantity})`).join(", ")}
+                </p>
+              </div>
+              {po.status === "ordered" ? (
+                <button
+                  type="button"
+                  onClick={() => markReceived(po.id)}
+                  className="shrink-0 rounded-full border border-line-strong px-3 py-1.5 text-xs text-ink-soft hover:border-primary"
+                >
+                  Mark received
+                </button>
+              ) : (
+                <span className="shrink-0 rounded-full bg-success-soft px-2 py-0.5 text-xs capitalize text-success">{po.status}</span>
+              )}
             </div>
-            {po.status === "ordered" ? (
-              <button
-                type="button"
-                onClick={() => markReceived(po.id)}
-                className="rounded-full border border-line-strong px-3 py-1.5 text-xs text-ink-soft hover:border-primary"
-              >
-                Mark received
-              </button>
-            ) : (
-              <span className="rounded-full bg-success-soft px-2 py-0.5 text-xs capitalize text-success">{po.status}</span>
-            )}
+            <p className="mt-2 font-medium text-ink">{formatMoney(po.total_cost_cents, currency)}</p>
           </div>
         ))}
       </div>
