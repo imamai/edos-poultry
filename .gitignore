@@ -40,6 +40,9 @@ yarn-error.log*
 # supabase CLI cache (created by `npx supabase`, not part of the app)
 /supabase/.temp
 
+# ad-hoc working files (e.g. one-off audit reports), not part of the app
+/scratchpad
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

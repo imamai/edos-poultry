@@ -512,3 +512,43 @@ export interface Announcement {
   ends_at: string | null;
   created_at: string;
 }
+
+export type MarketplaceCategory = "eggs" | "birds" | "manure" | "feed_request" | "other";
+export type MarketplaceListingStatus = "active" | "fulfilled" | "expired" | "cancelled";
+
+export interface MarketplaceListing {
+  id: string;
+  tenant_id: string;
+  farm_id: string;
+  flock_id: string | null;
+  category: MarketplaceCategory;
+  title: string;
+  description: string | null;
+  quantity: number | null;
+  unit: string | null;
+  price_cents: number | null;
+  location: string | null;
+  contact_name: string | null;
+  contact_phone: string | null;
+  status: MarketplaceListingStatus;
+  created_by: string | null;
+  created_at: string;
+  expires_at: string;
+}
+
+/** What poultryedos_marketplace_browse() returns -- a curated, cross-tenant
+ * projection, never the raw table (see migration 0028). */
+export interface MarketplaceBrowseRow {
+  id: string;
+  category: MarketplaceCategory;
+  title: string;
+  description: string | null;
+  quantity: number | null;
+  unit: string | null;
+  price_cents: number | null;
+  location: string | null;
+  contact_name: string | null;
+  contact_phone: string | null;
+  seller_name: string;
+  created_at: string;
+}

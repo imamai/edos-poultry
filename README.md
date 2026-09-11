@@ -400,6 +400,58 @@ farmers, some visited by field officers. Modeling a fake "primary farmer"
 ranking would misrepresent how cooperatives actually work, so
 `poultryedos_farmers` has no such field.
 
+### Marketplace (spec §42) — farmer-listing side
+
+The first slice of the three-way "Deliberately deferred" group
+(Cooperatives §40 / Contract Farming §41 / Marketplace §42): a real,
+public listings board. A tenant member (owner/admin/farmer) posts eggs,
+birds, manure, or a feed request from `/app/marketplace`
+(`poultryedos_marketplace_listings`, migration `0028`/`0029`), and anyone
+— including a visitor with no Poultry360 account at all — can browse it at
+the public `/marketplace` and at `/app/marketplace`'s browse tab, seeing
+the listing's contact phone directly.
+
+**Design**: every other table in this schema keeps reads tenant-scoped
+and exposes any cross-cutting view through an audited `SECURITY DEFINER`
+RPC rather than loosening a base policy (`poultryedos_list_tenant_members`,
+the super-admin RPCs). `poultryedos_marketplace_browse()` follows the same
+shape, except it's deliberately granted to `anon` too (mirroring
+`poultryedos_view_invite`) — a marketplace only has value if a buyer who
+isn't already a signed-in tenant member can find it. The base table
+itself stays exactly as tenant-scoped and subscription-gated as every
+other operational table (same `poultryedos_is_subscription_active()`
+check as expenses/sales/purchase orders).
+
+**Visibility is a deliberate, confirmed product choice**: fully public,
+phone number included, same model as OLX/Jiji-style classifieds already
+familiar in Kenya. The farmer opts into that by choosing to create a
+public listing.
+
+**Explicitly out of scope for this pass**: buyer accounts that "publish
+demand" with their own login (a buyer just calls the number instead —
+no second identity system was built to receive listings), contract
+farming (§41), and a distinct Cooperative org type with input-distribution
+tracking (§40) — each a separately-sized piece of work with no natural
+overlap with a listings board.
+
+**Live-verified** with two disposable synthetic tenants: tenant A's
+listing was visible to tenant B's authenticated session *and* to a
+completely anonymous client with no session at all via
+`poultryedos_marketplace_browse()`; tenant B could not update or cancel
+tenant A's listing directly against the base table (RLS silently
+rejected it — 0 rows affected); tenant A's own owner could update their
+own listing; suspending tenant A's subscription correctly blocked a new
+listing insert with the same `42501` RLS rejection used everywhere else
+in this schema; and a listing with `expires_at` in the past was correctly
+excluded from browse results. **One real bug was caught during this
+verification, before any real listing was ever created**: the table's
+`created_by` column was `not null` with nothing (in the app or the
+migration) ever populating it on insert — every real insert would have
+failed outright. Fixed in `0029` to match this schema's actual existing
+convention (nullable, `on delete set null`, same as `poultryedos_expenses`
+and `poultryedos_daily_records`). All test tenants, farms, and throwaway
+auth users deleted afterward.
+
 ## Real-world requirements audit
 
 A stakeholder (Naomi) sent a plain-language list of what a Brooding record,
@@ -478,11 +530,14 @@ mean very different amounts of engineering:
   generic permission engine underneath. Still deferred, now on purpose
   rather than by default: build the generic tables when a tenant actually
   needs to *define new custom roles*, not just use the ones already coded.
-- **Cooperatives/aggregators as a distinct concept, contract farming, the
-  marketplace** (spec §40/41/42): a network tenant with many farmers and
-  field officers exists now, but there's no separate "cooperative"
-  organization type, input-distribution tracking, contract terms, or any
-  marketplace listing/matching between farmers and buyers.
+- **Cooperatives/aggregators as a distinct concept, contract farming**
+  (spec §40/41): a network tenant with many farmers and field officers
+  exists now, but there's no separate "cooperative" organization type,
+  input-distribution tracking, or contract terms/settlement. The
+  **Marketplace (§42) now has a first real slice** — see "Marketplace"
+  above — farmer-side listings and public browsing are live; buyer
+  accounts, in-app messaging/order matching, contract farming, and the
+  cooperative org type remain deferred.
 - **Farm-location mapping** (§61's "farm locations"): a farm map needs farm
   GPS coordinates, and nothing in the app has ever captured them —
   `poultryedos_farms.gps_lat/gps_lng` exist in the schema (migration

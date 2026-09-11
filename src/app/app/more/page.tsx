@@ -16,6 +16,7 @@ import {
   Bot,
   LayoutDashboard,
   ShieldAlert,
+  Store,
 } from "lucide-react";
 import { getMyMembership, getMyFarmerContext } from "@/lib/data/farmer";
 import { isSuperAdmin } from "@/lib/data/super-admin";
@@ -49,6 +50,9 @@ export default async function MorePage() {
     items.push({ href: "/app/superadmin", label: "Super Admin", desc: "Every tenant on the platform", icon: ShieldAlert });
   }
   items.push(...INTELLIGENCE_ITEMS);
+  // Not gated on farmerContext, unlike FARMER_ITEMS below — browsing the
+  // public board has value even before a farm exists to post from.
+  items.push({ href: "/app/marketplace", label: "Marketplace", desc: "List or browse eggs, birds, manure, feed", icon: Store });
   if (farmerContext) items.push(...FARMER_ITEMS);
   if (isOwnerOrAdmin) {
     items.push({ href: "/app/billing", label: "Billing", desc: "Plan, usage, and payments", icon: CreditCard });
