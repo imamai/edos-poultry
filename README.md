@@ -545,6 +545,20 @@ client-side UI) — the PDF generation code was confirmed to run without
 error, but clicking through `/app/pos` and `/app/quotations` for real is
 worth doing once this ships.
 
+**A real bug was found exactly this way** — the user clicked through the
+new POS screen and reported "quantity has restrictions." The Quantity
+input had `min={0.01}` with `step="0.1"`: HTML5's native validation only
+accepts values that are `min` plus a whole multiple of `step`, and 0.01
+isn't on the 0.1 grid, so the browser silently rejected virtually every
+normal quantity (5, 10, 50...) with nothing but a native "please enter a
+valid value" tooltip. The exact same mismatch existed in the Purchases
+form's quantity field too — introduced earlier this session when its
+`min` was raised from `0` to `0.01` to match the database's
+`check (quantity > 0)`, without also fixing `step` to match. Fixed in
+both places by switching `step` to `"any"`, which keeps the `min=0.01`
+floor but drops the step-multiple requirement — this is exactly the kind
+of thing manual click-through catches that static analysis can't.
+
 ## Real-world requirements audit
 
 A stakeholder (Naomi) sent a plain-language list of what a Brooding record,
