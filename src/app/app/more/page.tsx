@@ -17,6 +17,8 @@ import {
   LayoutDashboard,
   ShieldAlert,
   Store,
+  ShoppingCart,
+  FileSignature,
 } from "lucide-react";
 import { getMyMembership, getMyFarmerContext } from "@/lib/data/farmer";
 import { isSuperAdmin } from "@/lib/data/super-admin";
@@ -29,6 +31,8 @@ const INTELLIGENCE_ITEMS: MoreItem[] = [
 ];
 
 const FARMER_ITEMS: MoreItem[] = [
+  { href: "/app/pos", label: "Point of Sale", desc: "Sell to a client, get a receipt or invoice", icon: ShoppingCart },
+  { href: "/app/quotations", label: "Quotations", desc: "Pre-sale offers you can convert to a sale", icon: FileSignature },
   { href: "/app/health", label: "Health", desc: "Symptoms, treatment, vet visits", icon: HeartPulse },
   { href: "/app/vaccination", label: "Vaccination", desc: "Schedule and history", icon: Syringe },
   { href: "/app/medications", label: "Medications", desc: "Antibiotics, multivitamins, dewormers", icon: Pill },

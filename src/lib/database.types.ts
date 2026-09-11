@@ -252,21 +252,89 @@ export interface Customer {
 
 export type SaleProduct = "eggs" | "live_birds" | "processed_birds" | "spent_layers" | "chicks" | "manure" | "other";
 export type PaymentMethod = "cash" | "mpesa" | "bank" | "credit" | "other";
+/** A real payment against a sale is never made "on credit" -- credit is
+ * the absence of a payment, not a way of making one (migration 0030). */
+export type ActualPaymentMethod = "cash" | "mpesa" | "bank" | "other";
 
+/** As of migration 0030, a sale is a header + one or more poultryedos_sale_items
+ * -- total_amount_cents is trigger-maintained from those items, and
+ * product/quantity/unit/unit_price_cents no longer live here. */
 export interface Sale {
   id: string;
   tenant_id: string;
   flock_id: string | null;
   customer_id: string | null;
-  product: SaleProduct;
-  quantity: number;
-  unit: string;
-  unit_price_cents: number;
   total_amount_cents: number;
   payment_method: PaymentMethod;
   sale_date: string;
   notes: string | null;
+  created_by: string | null;
   created_at: string;
+}
+
+export interface SaleItem {
+  id: string;
+  tenant_id: string;
+  sale_id: string;
+  product: SaleProduct;
+  quantity: number;
+  unit: string;
+  unit_price_cents: number;
+  discount_cents: number;
+  line_total_cents: number;
+  created_at: string;
+}
+
+export interface Payment {
+  id: string;
+  tenant_id: string;
+  sale_id: string;
+  amount_cents: number;
+  method: ActualPaymentMethod;
+  paid_at: string;
+  recorded_by: string | null;
+  created_at: string;
+}
+
+export type QuotationStatus = "draft" | "sent" | "accepted" | "declined" | "expired" | "converted";
+
+export interface Quotation {
+  id: string;
+  tenant_id: string;
+  farm_id: string;
+  customer_id: string | null;
+  prospect_name: string | null;
+  prospect_phone: string | null;
+  valid_until: string | null;
+  status: QuotationStatus;
+  notes: string | null;
+  total_amount_cents: number;
+  converted_sale_id: string | null;
+  created_by: string | null;
+  created_at: string;
+}
+
+export interface QuotationItem {
+  id: string;
+  tenant_id: string;
+  quotation_id: string;
+  product: SaleProduct;
+  quantity: number;
+  unit: string;
+  unit_price_cents: number;
+  discount_cents: number;
+  line_total_cents: number;
+  created_at: string;
+}
+
+/** A cart line as sent to poultryedos_create_sale/create_quotation's
+ * p_items jsonb argument. */
+export interface CartLine {
+  product: SaleProduct;
+  quantity: number;
+  unit: string;
+  unit_price_cents: number;
+  discount_cents: number;
 }
 
 export type InventoryCategory = "feed" | "vaccine" | "medicine" | "equipment" | "other";

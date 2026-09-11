@@ -1,24 +1,17 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Printer, Download } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import type { Customer, Flock, PaymentMethod, Sale, SaleProduct } from "@/lib/database.types";
+import type { Customer, Flock, ActualPaymentMethod, PaymentMethod } from "@/lib/database.types";
+import { type SaleWithDetails, saleBalanceCents, saleAmountPaidCents } from "@/lib/sales-helpers";
 import { formatMoney } from "@/lib/money";
 import { PrintHeader, PrintSection, PrintRow } from "@/components/app/print-report";
 import { downloadSimpleReportPdf } from "@/lib/pdf/simple-report";
+import { downloadSaleDocumentPdf } from "@/lib/pdf/sale-document";
 import { BatchReassign } from "@/components/app/batch-reassign";
-
-const PRODUCTS: { value: SaleProduct; label: string }[] = [
-  { value: "eggs", label: "Eggs" },
-  { value: "live_birds", label: "Live birds" },
-  { value: "processed_birds", label: "Processed birds" },
-  { value: "spent_layers", label: "Spent layers" },
-  { value: "chicks", label: "Chicks" },
-  { value: "manure", label: "Manure" },
-  { value: "other", label: "Other" },
-];
+import { CartLineItems, PRODUCTS, emptyCartLine, cartTotals, cartToPayload, type CartLineDraft } from "@/components/app/cart-line-items";
 
 export function SalesManager({
   tenantId,
@@ -36,7 +29,7 @@ export function SalesManager({
   defaultFlockId: string | null;
   currency: string;
   quickDailyTotalCents: number;
-  sales: (Sale & { poultryedos_customers: { name: string; phone: string | null } | null; poultryedos_flocks: { batch_code: string } | null })[];
+  sales: SaleWithDetails[];
   customers: Customer[];
   tenantName: string;
   farmName: string;
@@ -44,25 +37,21 @@ export function SalesManager({
   const router = useRouter();
   const [adding, setAdding] = useState(false);
   const [flockId, setFlockId] = useState(defaultFlockId ?? "");
-  const [product, setProduct] = useState<SaleProduct>("eggs");
-  const [quantity, setQuantity] = useState("");
-  const [unit, setUnit] = useState("trays");
-  const [unitPrice, setUnitPrice] = useState("");
+  const [lines, setLines] = useState<CartLineDraft[]>([emptyCartLine()]);
   const [customerId, setCustomerId] = useState("");
   const [newCustomerName, setNewCustomerName] = useState("");
   const [newCustomerPhone, setNewCustomerPhone] = useState("");
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
+  const [paymentChoice, setPaymentChoice] = useState<"full" | "partial" | "credit">("full");
+  const [paymentMethod, setPaymentMethod] = useState<ActualPaymentMethod>("cash");
+  const [partialAmount, setPartialAmount] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [editingBatchFor, setEditingBatchFor] = useState<string | null>(null);
+  const [payingFor, setPayingFor] = useState<string | null>(null);
 
   const itemizedTotal = sales.reduce((sum, s) => sum + s.total_amount_cents, 0);
   const grandTotal = quickDailyTotalCents + itemizedTotal;
-  const computedTotal = useMemo(() => {
-    const q = Number(quantity) || 0;
-    const p = Number(unitPrice) || 0;
-    return Math.round(q * p * 100);
-  }, [quantity, unitPrice]);
+  const { subtotalCents, discountCents, totalCents } = cartTotals(lines);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -74,11 +63,7 @@ export function SalesManager({
     if (!resolvedCustomerId && newCustomerName.trim()) {
       const { data, error } = await supabase
         .from("poultryedos_customers")
-        .insert({
-          tenant_id: tenantId,
-          name: newCustomerName.trim(),
-          phone: newCustomerPhone.trim() || null,
-        })
+        .insert({ tenant_id: tenantId, name: newCustomerName.trim(), phone: newCustomerPhone.trim() || null })
         .select("id")
         .single();
       if (error || !data) {
@@ -89,16 +74,17 @@ export function SalesManager({
       resolvedCustomerId = (data as { id: string }).id;
     }
 
-    const { error } = await supabase.from("poultryedos_sales").insert({
-      tenant_id: tenantId,
-      flock_id: flockId || null,
-      customer_id: resolvedCustomerId,
-      product,
-      quantity: Number(quantity),
-      unit,
-      unit_price_cents: Math.round(Number(unitPrice) * 100),
-      total_amount_cents: computedTotal,
-      payment_method: paymentMethod,
+    const amountPaidNowCents =
+      paymentChoice === "full" ? totalCents : paymentChoice === "partial" ? Math.round(Number(partialAmount) * 100) : 0;
+    const effectivePaymentMethod: PaymentMethod = paymentChoice === "credit" ? "credit" : paymentMethod;
+
+    const { error } = await supabase.rpc("poultryedos_create_sale", {
+      p_tenant_id: tenantId,
+      p_flock_id: flockId || null,
+      p_customer_id: resolvedCustomerId,
+      p_items: cartToPayload(lines),
+      p_amount_paid_now_cents: amountPaidNowCents,
+      p_payment_method: effectivePaymentMethod,
     });
 
     setBusy(false);
@@ -106,15 +92,56 @@ export function SalesManager({
       setError(error.message);
       return;
     }
-    setQuantity("");
-    setUnitPrice("");
+    setLines([emptyCartLine()]);
     setNewCustomerName("");
     setNewCustomerPhone("");
+    setPartialAmount("");
     setAdding(false);
     router.refresh();
   }
 
+  async function submitPayment(saleId: string, amountCents: number, method: ActualPaymentMethod) {
+    const supabase = createClient();
+    const { error } = await supabase.rpc("poultryedos_record_sale_payment", {
+      p_sale_id: saleId,
+      p_amount_cents: amountCents,
+      p_method: method,
+    });
+    if (error) {
+      window.alert(error.message);
+      return;
+    }
+    setPayingFor(null);
+    router.refresh();
+  }
+
+  function downloadDocument(sale: SaleWithDetails) {
+    const balance = saleBalanceCents(sale);
+    const kind = balance <= 0 ? "receipt" : "invoice";
+    downloadSaleDocumentPdf({
+      kind,
+      tenantName,
+      farmName,
+      documentNumber: sale.id.slice(0, 8).toUpperCase(),
+      date: new Date(sale.sale_date).toLocaleDateString("en-KE", { day: "numeric", month: "long", year: "numeric" }),
+      currency,
+      billTo: { name: sale.poultryedos_customers?.name ?? "Walk-in customer", phone: sale.poultryedos_customers?.phone },
+      lines: sale.poultryedos_sale_items.map((i) => ({
+        description: PRODUCTS.find((p) => p.value === i.product)?.label ?? i.product,
+        quantity: `${i.quantity} ${i.unit}`,
+        unitPrice: i.unit_price_cents,
+        lineTotal: i.line_total_cents,
+      })),
+      subtotalCents: sale.poultryedos_sale_items.reduce((s, i) => s + i.quantity * i.unit_price_cents, 0),
+      discountCents: sale.poultryedos_sale_items.reduce((s, i) => s + i.discount_cents, 0),
+      totalCents: sale.total_amount_cents,
+      amountPaidCents: saleAmountPaidCents(sale),
+      filename: `${kind}-${sale.id.slice(0, 8)}.pdf`,
+    });
+  }
+
   function handleDownloadPdf() {
+    const allItems = sales.flatMap((s) => s.poultryedos_sale_items.map((i) => ({ sale: s, item: i })));
     downloadSimpleReportPdf({
       tenantName,
       subtitle: farmName,
@@ -132,15 +159,15 @@ export function SalesManager({
       ],
       table: {
         title: "Itemized sales",
-        head: ["Date", "Batch", "Client", "Contacts", "Payment", "Qty", "Cost"],
-        body: sales.map((s) => [
-          new Date(s.sale_date).toLocaleDateString("en-KE", { day: "numeric", month: "short" }),
-          s.poultryedos_flocks?.batch_code ?? "General",
-          s.poultryedos_customers?.name ?? "Walk-in",
-          s.poultryedos_customers?.phone ?? "—",
-          s.payment_method,
-          `${s.quantity} ${s.unit}`,
-          formatMoney(s.total_amount_cents, currency),
+        head: ["Date", "Batch", "Client", "Product", "Qty", "Payment", "Cost"],
+        body: allItems.map(({ sale, item }) => [
+          new Date(sale.sale_date).toLocaleDateString("en-KE", { day: "numeric", month: "short" }),
+          sale.poultryedos_flocks?.batch_code ?? "General",
+          sale.poultryedos_customers?.name ?? "Walk-in",
+          PRODUCTS.find((p) => p.value === item.product)?.label ?? item.product,
+          `${item.quantity} ${item.unit}`,
+          sale.payment_method,
+          formatMoney(item.line_total_cents, currency),
         ]),
       },
     });
@@ -171,7 +198,7 @@ export function SalesManager({
               onClick={() => setAdding(true)}
               className="rounded-full bg-ink px-4 py-2 text-sm font-medium text-paper hover:bg-primary-dark"
             >
-              + Log a sale
+              + New sale
             </button>
           )}
         </div>
@@ -205,59 +232,16 @@ export function SalesManager({
               </select>
             </div>
           )}
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <label className="text-sm font-medium text-ink-soft">Product</label>
-              <select
-                value={product}
-                onChange={(e) => setProduct(e.target.value as SaleProduct)}
-                className="mt-1 w-full rounded-lg border border-line-strong px-3 py-2 text-sm outline-none focus:border-primary"
-              >
-                {PRODUCTS.map((p) => (
-                  <option key={p.value} value={p.value}>
-                    {p.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label className="text-sm font-medium text-ink-soft">Unit</label>
-              <input
-                value={unit}
-                onChange={(e) => setUnit(e.target.value)}
-                placeholder="trays, pieces, kg…"
-                className="mt-1 w-full rounded-lg border border-line-strong px-3 py-2 text-sm outline-none focus:border-primary"
-              />
-            </div>
-            <div>
-              <label className="text-sm font-medium text-ink-soft">Quantity</label>
-              <input
-                type="number"
-                required
-                min={0}
-                step="0.1"
-                value={quantity}
-                onChange={(e) => setQuantity(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-line-strong px-3 py-2 text-sm outline-none focus:border-primary"
-              />
-            </div>
-            <div>
-              <label className="text-sm font-medium text-ink-soft">Unit price ({currency})</label>
-              <input
-                type="number"
-                required
-                min={0}
-                step="0.01"
-                value={unitPrice}
-                onChange={(e) => setUnitPrice(e.target.value)}
-                className="mt-1 w-full rounded-lg border border-line-strong px-3 py-2 text-sm outline-none focus:border-primary"
-              />
-            </div>
-          </div>
 
-          <p className="text-sm text-ink-soft">
-            Total: <span className="font-medium text-ink">{formatMoney(computedTotal, currency)}</span>
-          </p>
+          <CartLineItems lines={lines} onChange={setLines} />
+
+          <div className="flex items-center justify-between rounded-lg bg-paper px-3 py-2 text-sm">
+            <span className="text-ink-faint">
+              Subtotal {formatMoney(subtotalCents, currency)}
+              {discountCents > 0 && ` · Discount -${formatMoney(discountCents, currency)}`}
+            </span>
+            <span className="font-medium text-ink">Total {formatMoney(totalCents, currency)}</span>
+          </div>
 
           <div>
             <label className="text-sm font-medium text-ink-soft">Customer (optional)</label>
@@ -292,23 +276,56 @@ export function SalesManager({
           </div>
 
           <div>
-            <label className="text-sm font-medium text-ink-soft">Payment method</label>
+            <label className="text-sm font-medium text-ink-soft">Payment</label>
             <div className="mt-2 flex flex-wrap gap-2">
-              {(["cash", "mpesa", "bank", "credit", "other"] as PaymentMethod[]).map((m) => (
+              {(
+                [
+                  ["full", "Paid in full now"],
+                  ["partial", "Partial payment now"],
+                  ["credit", "On credit (pay later)"],
+                ] as [typeof paymentChoice, string][]
+              ).map(([value, label]) => (
                 <button
-                  key={m}
+                  key={value}
                   type="button"
-                  onClick={() => setPaymentMethod(m)}
-                  className={`rounded-full border px-3 py-1.5 text-sm capitalize ${
-                    paymentMethod === m
-                      ? "border-primary bg-primary-soft text-primary"
-                      : "border-line-strong text-ink-soft"
+                  onClick={() => setPaymentChoice(value)}
+                  className={`rounded-full border px-3 py-1.5 text-sm ${
+                    paymentChoice === value ? "border-primary bg-primary-soft text-primary" : "border-line-strong text-ink-soft"
                   }`}
                 >
-                  {m}
+                  {label}
                 </button>
               ))}
             </div>
+            {paymentChoice !== "credit" && (
+              <div className="mt-2 flex flex-wrap gap-2">
+                {(["cash", "mpesa", "bank", "other"] as ActualPaymentMethod[]).map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    onClick={() => setPaymentMethod(m)}
+                    className={`rounded-full border px-3 py-1.5 text-sm capitalize ${
+                      paymentMethod === m ? "border-primary bg-primary-soft text-primary" : "border-line-strong text-ink-soft"
+                    }`}
+                  >
+                    {m}
+                  </button>
+                ))}
+              </div>
+            )}
+            {paymentChoice === "partial" && (
+              <input
+                type="number"
+                required
+                min={0.01}
+                max={totalCents / 100}
+                step="0.01"
+                value={partialAmount}
+                onChange={(e) => setPartialAmount(e.target.value)}
+                placeholder={`Amount paid now (${currency})`}
+                className="mt-2 w-full rounded-lg border border-line-strong px-3 py-2 text-sm outline-none focus:border-primary"
+              />
+            )}
           </div>
 
           {error && <p className="text-sm text-danger">{error}</p>}
@@ -326,7 +343,7 @@ export function SalesManager({
               disabled={busy}
               className="rounded-full bg-primary px-5 py-2.5 text-sm font-medium text-white hover:bg-primary-dark disabled:opacity-60"
             >
-              {busy ? "Saving…" : "Save sale"}
+              {busy ? "Saving…" : "Complete sale"}
             </button>
           </div>
         </form>
@@ -338,49 +355,79 @@ export function SalesManager({
             No itemized sales yet. Quick daily totals from Record Today still count toward your total above.
           </p>
         )}
-        {sales.map((s) => (
-          <div key={s.id} className="rounded-xl border border-line bg-paper-raised px-4 py-3 text-sm">
-            <div className="flex items-center justify-between">
-              <div>
-                <p className="font-medium text-ink capitalize">
-                  {s.product.replace("_", " ")} · {s.quantity} {s.unit}
-                </p>
-                <p className="text-xs text-ink-faint">
-                  {new Date(s.sale_date).toLocaleDateString("en-KE", { day: "numeric", month: "short" })}
-                  {" · "}
-                  {s.poultryedos_flocks?.batch_code ?? "General"}
-                  {flocks.length > 0 && (
-                    <>
-                      {" "}
-                      <button
-                        type="button"
-                        onClick={() => setEditingBatchFor(editingBatchFor === s.id ? null : s.id)}
-                        className="text-primary hover:underline"
-                      >
-                        (change)
-                      </button>
-                    </>
-                  )}
-                  {s.poultryedos_customers && ` · ${s.poultryedos_customers.name}`}
-                </p>
+        {sales.map((s) => {
+          const balance = saleBalanceCents(s);
+          return (
+            <div key={s.id} className="rounded-xl border border-line bg-paper-raised px-4 py-3 text-sm">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="font-medium text-ink capitalize">
+                    {s.poultryedos_sale_items
+                      .map((i) => `${i.product.replace("_", " ")} (${i.quantity} ${i.unit})`)
+                      .join(", ")}
+                  </p>
+                  <p className="text-xs text-ink-faint">
+                    {new Date(s.sale_date).toLocaleDateString("en-KE", { day: "numeric", month: "short" })}
+                    {" · "}
+                    {s.poultryedos_flocks?.batch_code ?? "General"}
+                    {flocks.length > 0 && (
+                      <>
+                        {" "}
+                        <button
+                          type="button"
+                          onClick={() => setEditingBatchFor(editingBatchFor === s.id ? null : s.id)}
+                          className="text-primary hover:underline"
+                        >
+                          (change)
+                        </button>
+                      </>
+                    )}
+                    {s.poultryedos_customers && ` · ${s.poultryedos_customers.name}`}
+                  </p>
+                </div>
+                <div className="shrink-0 text-right">
+                  <span className="font-medium text-ink">{formatMoney(s.total_amount_cents, currency)}</span>
+                  {balance > 0 && <p className="text-xs text-danger">Balance {formatMoney(balance, currency)}</p>}
+                </div>
               </div>
-              <span className="font-medium text-ink">{formatMoney(s.total_amount_cents, currency)}</span>
+
+              <div className="mt-2 flex flex-wrap gap-2 border-t border-line pt-2">
+                <button
+                  type="button"
+                  onClick={() => downloadDocument(s)}
+                  className="rounded-full border border-line-strong px-3 py-1 text-xs text-ink-soft hover:border-primary"
+                >
+                  {balance <= 0 ? "Download Receipt" : "Download Invoice"}
+                </button>
+                {balance > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setPayingFor(payingFor === s.id ? null : s.id)}
+                    className="rounded-full border border-line-strong px-3 py-1 text-xs text-ink-soft hover:border-primary"
+                  >
+                    Record payment
+                  </button>
+                )}
+              </div>
+
+              {editingBatchFor === s.id && (
+                <BatchReassign
+                  currentFlockId={s.flock_id}
+                  flocks={flocks}
+                  onSave={async (newFlockId) => {
+                    const supabase = createClient();
+                    await supabase.from("poultryedos_sales").update({ flock_id: newFlockId }).eq("id", s.id);
+                    setEditingBatchFor(null);
+                    router.refresh();
+                  }}
+                  onCancel={() => setEditingBatchFor(null)}
+                />
+              )}
+
+              {payingFor === s.id && <RecordPaymentPanel balanceCents={balance} onSave={(amt, method) => submitPayment(s.id, amt, method)} onCancel={() => setPayingFor(null)} />}
             </div>
-            {editingBatchFor === s.id && (
-              <BatchReassign
-                currentFlockId={s.flock_id}
-                flocks={flocks}
-                onSave={async (newFlockId) => {
-                  const supabase = createClient();
-                  await supabase.from("poultryedos_sales").update({ flock_id: newFlockId }).eq("id", s.id);
-                  setEditingBatchFor(null);
-                  router.refresh();
-                }}
-                onCancel={() => setEditingBatchFor(null)}
-              />
-            )}
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       {/* ---------- Print / PDF report view ---------- */}
@@ -400,31 +447,91 @@ export function SalesManager({
                 <th className="py-1 pr-2">Date</th>
                 <th className="py-1 pr-2">Batch</th>
                 <th className="py-1 pr-2">Client</th>
-                <th className="py-1 pr-2">Contacts</th>
+                <th className="py-1 pr-2">Product</th>
                 <th className="py-1 pr-2">Payment</th>
                 <th className="py-1 pr-2">Qty</th>
                 <th className="py-1">Cost</th>
               </tr>
             </thead>
             <tbody>
-              {sales.map((s) => (
-                <tr key={s.id} className="border-b border-black/10">
-                  <td className="py-1 pr-2">
-                    {new Date(s.sale_date).toLocaleDateString("en-KE", { day: "numeric", month: "short" })}
-                  </td>
-                  <td className="py-1 pr-2">{s.poultryedos_flocks?.batch_code ?? "General"}</td>
-                  <td className="py-1 pr-2">{s.poultryedos_customers?.name ?? "Walk-in"}</td>
-                  <td className="py-1 pr-2">{s.poultryedos_customers?.phone ?? "—"}</td>
-                  <td className="py-1 pr-2 capitalize">{s.payment_method}</td>
-                  <td className="py-1 pr-2">
-                    {s.quantity} {s.unit}
-                  </td>
-                  <td className="py-1">{formatMoney(s.total_amount_cents, currency)}</td>
-                </tr>
-              ))}
+              {sales.flatMap((s) =>
+                s.poultryedos_sale_items.map((item) => (
+                  <tr key={item.id} className="border-b border-black/10">
+                    <td className="py-1 pr-2">
+                      {new Date(s.sale_date).toLocaleDateString("en-KE", { day: "numeric", month: "short" })}
+                    </td>
+                    <td className="py-1 pr-2">{s.poultryedos_flocks?.batch_code ?? "General"}</td>
+                    <td className="py-1 pr-2">{s.poultryedos_customers?.name ?? "Walk-in"}</td>
+                    <td className="py-1 pr-2 capitalize">{item.product.replace("_", " ")}</td>
+                    <td className="py-1 pr-2 capitalize">{s.payment_method}</td>
+                    <td className="py-1 pr-2">
+                      {item.quantity} {item.unit}
+                    </td>
+                    <td className="py-1">{formatMoney(item.line_total_cents, currency)}</td>
+                  </tr>
+                )),
+              )}
             </tbody>
           </table>
         </PrintSection>
+      </div>
+    </div>
+  );
+}
+
+function RecordPaymentPanel({
+  balanceCents,
+  onSave,
+  onCancel,
+}: {
+  balanceCents: number;
+  onSave: (amountCents: number, method: ActualPaymentMethod) => void;
+  onCancel: () => void;
+}) {
+  const [amount, setAmount] = useState(String(balanceCents / 100));
+  const [method, setMethod] = useState<ActualPaymentMethod>("cash");
+  const [busy, setBusy] = useState(false);
+
+  return (
+    <div className="mt-2 space-y-2 border-t border-line pt-2">
+      <div className="flex flex-wrap gap-2">
+        {(["cash", "mpesa", "bank", "other"] as ActualPaymentMethod[]).map((m) => (
+          <button
+            key={m}
+            type="button"
+            onClick={() => setMethod(m)}
+            className={`rounded-full border px-3 py-1 text-xs capitalize ${
+              method === m ? "border-primary bg-primary-soft text-primary" : "border-line-strong text-ink-soft"
+            }`}
+          >
+            {m}
+          </button>
+        ))}
+      </div>
+      <div className="flex items-center gap-2">
+        <input
+          type="number"
+          min={0.01}
+          step="0.01"
+          value={amount}
+          onChange={(e) => setAmount(e.target.value)}
+          className="flex-1 rounded-lg border border-line-strong px-2 py-1.5 text-xs outline-none focus:border-primary"
+        />
+        <button type="button" onClick={onCancel} className="rounded-full border border-line-strong px-3 py-1.5 text-xs text-ink-soft">
+          Cancel
+        </button>
+        <button
+          type="button"
+          disabled={busy}
+          onClick={async () => {
+            setBusy(true);
+            await onSave(Math.round(Number(amount) * 100), method);
+            setBusy(false);
+          }}
+          className="rounded-full bg-primary px-3 py-1.5 text-xs font-medium text-white disabled:opacity-60"
+        >
+          {busy ? "Saving…" : "Save"}
+        </button>
       </div>
     </div>
   );

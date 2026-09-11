@@ -8,9 +8,9 @@ import type {
   PurchaseOrder,
   PurchaseOrderItem,
   BiosecurityCheck,
-  Sale,
   Supplier,
 } from "@/lib/database.types";
+import type { SaleWithDetails } from "@/lib/sales-helpers";
 
 export async function getExpenseCategories(tenantId: string): Promise<ExpenseCategory[]> {
   const supabase = await createClient();
@@ -54,22 +54,18 @@ export async function getCustomers(tenantId: string): Promise<Customer[]> {
   return (data ?? []) as Customer[];
 }
 
-export async function getRecentSales(
-  tenantId: string,
-  limit = 30,
-): Promise<(Sale & { poultryedos_customers: { name: string; phone: string | null } | null; poultryedos_flocks: { batch_code: string } | null })[]> {
+export async function getRecentSales(tenantId: string, limit = 30): Promise<SaleWithDetails[]> {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("poultryedos_sales")
-    .select("*, poultryedos_customers(name, phone), poultryedos_flocks(batch_code)")
+    .select(
+      "*, poultryedos_customers(name, phone), poultryedos_flocks(batch_code), poultryedos_sale_items(*), poultryedos_payments(amount_cents)",
+    )
     .eq("tenant_id", tenantId)
     .order("sale_date", { ascending: false })
     .limit(limit);
   if (error) throw error;
-  return (data ?? []) as unknown as (Sale & {
-    poultryedos_customers: { name: string; phone: string | null } | null;
-    poultryedos_flocks: { batch_code: string } | null;
-  })[];
+  return (data ?? []) as unknown as SaleWithDetails[];
 }
 
 export async function getInventoryItems(tenantId: string): Promise<InventoryItem[]> {

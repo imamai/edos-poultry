@@ -452,6 +452,99 @@ convention (nullable, `on delete set null`, same as `poultryedos_expenses`
 and `poultryedos_daily_records`). All test tenants, farms, and throwaway
 auth users deleted afterward.
 
+### Point of Sale: multi-item sales, payments/balances, invoices/receipts, quotations
+
+The user asked whether the system could sell to clients and produce PDF
+invoices/quotations/receipts styled like the existing summary reports,
+then reframed it directly: "should have POS section." Spec §30/31
+explicitly called for `discount`, `balance`, `invoice`, and `receipt` on
+a sale, and none of that existed — a sale was one product, fully paid by
+assumption, with no document beyond an aggregate "Sales Summary" PDF.
+The spec's own schema-naming section also already anticipated
+`poultryedos_sale_items` and `poultryedos_payments` as separate tables.
+
+**Confirmed with the user**: build a real multi-item cart (several
+products, one client, one combined invoice/receipt), not one-product-
+per-sale — the bigger of two options weighed, matching what "POS"
+actually implies.
+
+**Schema** (migrations `0030`/`0031`, mirroring the multi-line pattern
+already proven for purchase orders in `0024`):
+- `poultryedos_sales` is now a header; `poultryedos_sale_items` holds the
+  line items (product/quantity/unit/unit_price/discount, with
+  `line_total_cents` a generated column so it can never drift). The
+  header's `total_amount_cents` is trigger-maintained from the items —
+  same shape as `poultryedos_purchase_orders.total_cost_cents` — so every
+  existing reader that only ever selected `total_amount_cents`
+  (`getFinancialReport`, `getFlockFinance`) needed **zero changes**.
+- `poultryedos_payments` is a real ledger against a sale — a balance is
+  always **derived** (`total_amount_cents` minus the sum of its
+  payments), never stored, the same "derive at read time" convention as
+  `biosecurityScore()`/`deriveSubscriptionStatus()`. "Credit" stays a
+  valid `payment_method` (what was agreed), but is never a
+  `payments.method` value — credit is the absence of a payment, not a
+  way of making one.
+- `poultryedos_create_sale()` — atomic header + line items + an optional
+  first payment, the same "one RPC, one transaction" shape as
+  `poultryedos_create_purchase_order`.
+- `poultryedos_record_sale_payment()` — records a later payment (e.g.
+  settling a credit sale), rejecting an over-payment with a specific,
+  friendly message rather than a raw constraint violation (same
+  discipline as `0023`/`0027`).
+- `poultryedos_quotations`/`poultryedos_quotation_items` — a pre-sale
+  offer to an existing customer or a prospect who isn't one yet, same
+  multi-line shape as sales. `poultryedos_convert_quotation_to_sale()`
+  copies an accepted quotation's items into a real sale rather than
+  requiring re-entry, and rejects converting an already-converted,
+  declined, or expired quotation.
+
+**The real production tenant already had 2 real sales** — the highest-
+risk part of this change. Both were read and snapshotted before the
+migration ran; both were confirmed to migrate into `sale_items` with the
+exact same figures (`900000`/`68000` cents), and the trigger-recomputed
+header total matched the pre-migration stored value exactly. **A second,
+smaller real-data issue was then caught and fixed**: those 2 pre-existing
+sales had zero payment rows (the ledger didn't exist yet when they were
+made), which would have made them appear as fully unpaid invoices even
+though their `mpesa` payment method meant they were actually settled at
+the time under the old schema's implicit assumption. Migration `0033`
+backfills exactly one payment per pre-existing non-credit sale, dated at
+the sale's own date — both now correctly show a zero balance.
+
+**PDF/print**: `src/lib/pdf/sale-document.ts` extends the exact same
+visual primitives as `simple-report.ts` (header/subtitle/title/"Printed
+&lt;date&gt;"/divider/`autoTable`) with a "Bill To" block and a status line —
+"Valid until" for a quotation, "Balance due" for an invoice, "Paid in
+full" for a receipt — one function, one visual family, so the three
+document types are obviously the same kind of thing.
+
+**New**: `/app/pos` (a dedicated checkout screen — cart, customer,
+payment, ending in an immediate receipt/invoice download) and
+`/app/quotations` (create, download, convert to sale). The Sales page's
+"+ New sale" panel got the same cart treatment, plus a balance-aware
+document button per sale (Receipt if paid in full, Invoice if not) and
+an inline "Record payment" control once a balance remains.
+
+**Live-verified** with two disposable synthetic tenants: a 2-item sale
+with a discount, created via `poultryedos_create_sale` with a partial
+payment — the derived balance matched exactly; `poultryedos_record_sale_payment`
+for the remainder brought the balance to exactly zero; a further
+over-payment attempt was rejected with a friendly message (a cosmetic
+bug in that message — "KES .00" instead of "KES 0.00" for a zero
+balance — was caught here too and fixed in `0032`); cross-tenant RLS
+isolation confirmed on all three new tables (sales/sale_items/payments)
+— zero rows visible to an unrelated tenant; a quotation created and
+converted to a sale, confirming the resulting sale's total matched the
+quotation exactly; a second conversion attempt on the same quotation
+correctly rejected. All test data and throwaway auth users deleted
+afterward. `npx tsc --noEmit`, `npx eslint .`, `npm run build` all clean.
+
+**Not visually verified in this environment**: no real browser is
+available in this sandbox (same limitation already noted for other
+client-side UI) — the PDF generation code was confirmed to run without
+error, but clicking through `/app/pos` and `/app/quotations` for real is
+worth doing once this ships.
+
 ## Real-world requirements audit
 
 A stakeholder (Naomi) sent a plain-language list of what a Brooding record,
