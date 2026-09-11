@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { ChevronRight } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import type { Farmer, FarmerInvite } from "@/lib/database.types";
 import type { TenantMemberWithEmail } from "@/lib/data/network";
@@ -117,14 +119,16 @@ export function TeamManager({
           return (
             <div key={f.id} className="rounded-xl border border-line bg-paper-raised px-4 py-3">
               <div className="flex items-center justify-between">
-                <div>
-                  <p className="font-medium text-ink">{f.full_name}</p>
+                <Link href={`/app/team/${f.id}`} className="min-w-0 flex-1 group">
+                  <p className="flex items-center gap-1 font-medium text-ink group-hover:text-primary">
+                    {f.full_name} <ChevronRight className="h-3.5 w-3.5 text-ink-faint" />
+                  </p>
                   <p className="text-xs text-ink-faint">
                     {f.farm_count} farm{f.farm_count === 1 ? "" : "s"}
                     {f.phone && ` · ${f.phone}`}
                     {f.user_id ? " · has own login" : ""}
                   </p>
-                </div>
+                </Link>
                 {!f.user_id && (
                   pendingInvite ? (
                     <button

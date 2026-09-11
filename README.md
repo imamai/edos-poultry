@@ -133,7 +133,16 @@ articles) any time with `supabase/seed.sql` (idempotent).
   works whether the invitee is already logged in, needs to sign up, or
   needs to log in first (all three preserve the invite link via a `?next=`
   redirect through the normal auth pages). See "Who is the main farmer?"
-  below for the design reasoning.
+  below for the design reasoning. Each farmer on **Team** links to
+  `/app/team/[farmerId]` — a per-farmer drill-down (their farms, every
+  flock with a live link into its full `/app/flock/[id]` detail, and a
+  7-day mortality/eggs/sales/expenses summary scoped to just that farmer)
+  for "show me just this one farmer," as opposed to **Network**'s
+  tenant-wide roll-up. No new tables or RLS policies — an owner/admin
+  could already read any farmer/farm/flock row in their tenant; this is
+  new UI composing existing reads, verified live against a synthetic
+  test tenant with a second, directly-managed farmer (correct farm/flock/
+  7-day numbers; an unrelated user saw zero rows, as always).
 - **Field officers** (spec §37/38): owners/admins assign a field officer to
   specific farmers (Team); the officer gets their own **Farmers**/**Visits**
   nav showing only what's assigned to them (RLS-enforced, verified — a

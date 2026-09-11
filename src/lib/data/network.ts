@@ -1,5 +1,5 @@
 import { createClient } from "@/lib/supabase/server";
-import type { Farmer, FarmerInvite, FieldTask, FieldVisit } from "@/lib/database.types";
+import type { Farm, Farmer, FarmerInvite, FieldTask, FieldVisit, Flock } from "@/lib/database.types";
 
 export async function getFarmersWithFarmCount(
   tenantId: string,
@@ -23,6 +23,93 @@ export async function getFarmersWithFarmCount(
   }
 
   return (farmers ?? []).map((f) => ({ ...(f as Farmer), farm_count: counts.get(f.id) ?? 0 }));
+}
+
+export interface FarmerDetailSummary {
+  activeFlockCount: number;
+  totalBirds: number;
+  mortality7d: number;
+  eggs7d: number;
+  sales7dCents: number;
+  expenses7dCents: number;
+}
+
+export interface FarmerDetail {
+  farmer: Farmer;
+  farms: (Farm & { flocks: Flock[] })[];
+  summary: FarmerDetailSummary;
+}
+
+/** One farmer's own farms/flocks and a 7-day summary — the drill-down an
+ * owner/admin needs from Team ("show me just this farmer"), as opposed to
+ * getNetworkSummary()'s tenant-wide roll-up. RLS already lets any tenant
+ * member read any farmer/farm/flock/daily-record row in their tenant (see
+ * migration 0002/0003), so the only scoping needed here is by farmer_id —
+ * no new policies required. Sales/expenses are summed only where tied to
+ * one of this farmer's flocks; tenant-wide entries with no flock_id can't
+ * be attributed to a specific farmer and are excluded, same as they would
+ * be from any other farmer's total. */
+export async function getFarmerDetail(farmerId: string, tenantId: string): Promise<FarmerDetail | null> {
+  const supabase = await createClient();
+  const { data: farmer } = await supabase
+    .from("poultryedos_farmers")
+    .select("*")
+    .eq("id", farmerId)
+    .eq("tenant_id", tenantId)
+    .maybeSingle();
+  if (!farmer) return null;
+
+  const { data: farms } = await supabase
+    .from("poultryedos_farms")
+    .select("*")
+    .eq("farmer_id", farmerId)
+    .order("created_at");
+
+  const farmIds = (farms ?? []).map((f) => f.id);
+  const { data: flocks } = farmIds.length
+    ? await supabase.from("poultryedos_flocks").select("*").in("farm_id", farmIds).order("placement_date", { ascending: false })
+    : { data: [] };
+
+  const farmsWithFlocks = (farms ?? []).map((f) => ({
+    ...(f as Farm),
+    flocks: (flocks ?? []).filter((fl) => fl.farm_id === f.id) as Flock[],
+  }));
+
+  const flockIds = (flocks ?? []).map((f) => f.id);
+  const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+
+  const [{ data: records }, { data: sales }, { data: expenses }] = await Promise.all([
+    flockIds.length
+      ? supabase
+          .from("poultryedos_daily_records")
+          .select("mortality, eggs_collected, sales_amount_cents")
+          .in("flock_id", flockIds)
+          .gte("record_date", sevenDaysAgo)
+      : Promise.resolve({ data: [] }),
+    flockIds.length
+      ? supabase.from("poultryedos_sales").select("total_amount_cents").in("flock_id", flockIds).gte("sale_date", sevenDaysAgo)
+      : Promise.resolve({ data: [] }),
+    flockIds.length
+      ? supabase.from("poultryedos_expenses").select("amount_cents").in("flock_id", flockIds).gte("expense_date", sevenDaysAgo)
+      : Promise.resolve({ data: [] }),
+  ]);
+
+  const activeFlocks = (flocks ?? []).filter((f) => f.status === "active");
+
+  return {
+    farmer: farmer as Farmer,
+    farms: farmsWithFlocks,
+    summary: {
+      activeFlockCount: activeFlocks.length,
+      totalBirds: activeFlocks.reduce((sum, f) => sum + f.current_quantity, 0),
+      mortality7d: (records ?? []).reduce((sum, r) => sum + (r.mortality ?? 0), 0),
+      eggs7d: (records ?? []).reduce((sum, r) => sum + (r.eggs_collected ?? 0), 0),
+      sales7dCents:
+        (records ?? []).reduce((sum, r) => sum + (r.sales_amount_cents ?? 0), 0) +
+        (sales ?? []).reduce((sum, s) => sum + (s.total_amount_cents ?? 0), 0),
+      expenses7dCents: (expenses ?? []).reduce((sum, e) => sum + (e.amount_cents ?? 0), 0),
+    },
+  };
 }
 
 export async function getPendingInvites(tenantId: string): Promise<FarmerInvite[]> {
