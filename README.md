@@ -643,62 +643,34 @@ totals) matched the query results exactly. No migration or RLS change
 was needed for any of this — it's read/aggregation logic only.
 `npx tsc --noEmit`, `npx eslint .`, `npm run build` all clean.
 
-### PWA safe-area fix — installed app didn't fit the phone like the browser tab did
+### PWA safe-area attempt — reverted after two rounds of regressions
 
-Reported directly: the installed PWA (added to home screen) didn't fit
-the phone well, unlike opening the same app in a regular browser tab.
-Root cause, found by inspecting the actual generated `<meta
-name="viewport">` tag: the bottom nav (`pb-[env(safe-area-inset-bottom)]`,
-`src/components/app/bottom-nav.tsx`) already had safe-area-aware padding
-written — but the root viewport meta tag (`src/app/layout.tsx`) never
-set `viewport-fit=cover`, and without it, every `env(safe-area-inset-*)`
-CSS value resolves to `0` — that padding was silently inert. A regular
-browser tab never showed the problem because the browser's own address
-bar/chrome already reserves that space; a standalone installed PWA has
-no chrome, so content can sit right under a notch/Dynamic Island or
-behind the home-indicator gesture bar with nothing to stop it.
+An installed PWA (added to home screen) reportedly didn't fit the phone
+as well as opening the same app in a regular browser tab. Two attempts
+were made to fix it by setting `viewport-fit=cover` on the root
+`Viewport` export so the already-written `env(safe-area-inset-*)` CSS in
+the app shell (header padding, `pb-[env(safe-area-inset-bottom)]` on the
+bottom nav) would actually resolve to something other than `0` — first
+unconditionally, which visibly broke the regular browser tab (reported
+directly, with screenshots) because `viewport-fit=cover` is a single
+global flag with no way to scope it to standalone mode alone; then
+scoped behind `@media (display-mode:standalone)`, confirmed correct in
+the compiled CSS, which **still** didn't resolve what the follow-up
+screenshots showed.
 
-Fixed: `viewportFit: "cover"` added to the `Viewport` export (confirmed
-in the built HTML output — the meta tag now reads `...,
-viewport-fit=cover`), plus the two places that needed to actually use
-the newly-unlocked safe-area values: the app shell's sticky header now
-adds `env(safe-area-inset-top)` on top of its existing padding, and the
-main content area's bottom padding (reserved for the fixed bottom nav)
-is now `calc(5rem + env(safe-area-inset-bottom))` instead of a flat
-`5rem` — a plain `5rem` would no longer be enough once the bottom nav
-itself grows taller by that same safe-area amount. Also added the
-`appleWebApp` metadata block (`capable`, `statusBarStyle: "default"`,
-`title`) — the standard set of tags iOS's home-screen install still
-looks for alongside the Web App Manifest. `npx tsc --noEmit`,
-`npx eslint .`, `npm run build` all clean; the emitted meta tags were
-confirmed directly in the build output.
-
-**That fix itself then regressed the regular browser tab** — reported
-directly, and a real miss on my part: `viewport-fit=cover` isn't scoped
-to standalone/installed mode, it's a single global flag, so the moment
-it's set, `env(safe-area-inset-*)` stops being `0` **everywhere**,
-including a plain browser tab (Safari in particular can report a
-non-zero safe-area once its own chrome auto-hides during scroll). That
-meant the padding added for the PWA case was now also quietly appearing
-in normal browsing, where it had never been designed or tested for.
-
-Fixed properly this time: `viewport-fit=cover` stays (it's required for
-`env()` to ever produce a real value in standalone mode at all — there's
-no way to scope the meta tag itself), but every place that *consumes*
-those safe-area values — the header's top padding, the main content's
-bottom padding, and the bottom nav's own
-`pb-[env(safe-area-inset-bottom)]` (which predates this session's PWA
-work and was silently inert until the meta-tag fix made it live
-everywhere too) — is now wrapped in Tailwind's arbitrary media-query
-variant, `[@media(display-mode:standalone)]:`, so the extra padding only
-ever applies when the page is actually running as an installed app.
-Confirmed directly in the compiled CSS output that all four rules land
-inside a real `@media (display-mode:standalone)` block; a plain browser
-tab now renders with exactly the padding values it had before any of
-this PWA work touched the file (`py-3`, `pb-20`, no bottom-nav
-safe-area padding at all), and only a standalone install gets the
-safe-area treatment. `npx tsc --noEmit`, `npx eslint .`, `npm run build`
-all clean.
+**Reverted in full** rather than attempting a third blind fix with no
+way to visually verify the result on a real device from this
+environment — restored `src/app/app/layout.tsx` and
+`src/components/app/bottom-nav.tsx` to byte-identical to the last known-
+good commit, and removed `viewportFit: "cover"` from
+`src/app/layout.tsx` (confirmed gone from the built `<meta
+name="viewport">` output). The `appleWebApp` metadata block (`capable`,
+`statusBarStyle`, `title: "Edospoultry360"`) was kept — it's inert
+metadata with no layout effect, and the title was a separately-requested
+rename. The original installed-PWA safe-area complaint is unresolved as
+of this revert; fixing it properly needs testing against a real device
+or browser, which isn't available in this environment — trial-and-error
+against production was doing more harm than the original issue.
 
 ## Real-world requirements audit
 
