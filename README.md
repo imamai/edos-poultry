@@ -571,6 +571,78 @@ long description truncates instead of wrapping and desyncing row
 heights. One shared function backs every quotation/invoice/receipt, so
 the fix applies to all three document types at once.
 
+### A real back button, and a Reports/Analytics overhaul
+
+Two more direct asks. First: almost every `/app/*` sub-page (Health,
+Vaccination, Expenses, Inventory, POS, Quotations, Marketplace, Reports,
+Billing, Content, Super Admin, every detail page) had no way back except
+the phone's own back gesture or re-tapping a bottom-nav tab — confirmed
+by grep, only 3 pages in the whole app had any hand-rolled back link.
+Fixed with one shared `BackButton` (`src/components/app/back-button.tsx`,
+`router.back()`), rendered in the header (`src/app/app/layout.tsx`) on
+every page that isn't a primary bottom-nav tab root — that root list now
+lives once, as `NAV_ROOT_PATHS` in `bottom-nav.tsx`, so the two can't
+drift apart.
+
+Second: Reports (`/app/reports`) was tenant-wide only, over 3 preset day
+ranges, with no way to look at one batch, no custom date range, and no
+on-screen view of the numbers at all — every figure required downloading
+a PDF or CSV to see. Now:
+
+- **Batch filter**: an "All batches" / per-batch selector
+  (`getAllTenantFlocks()`, tenant-wide across every farm, matching
+  Reports' existing network-rollup role restriction) narrows all three
+  reports at once via `?flock=<id>`.
+- **Custom date range**: a 4th "Custom" option alongside 7/30/90 reveals
+  two date inputs, navigating to `?from=&to=` — the page prefers those
+  over `?range=` when both are present, so every existing link/bookmark
+  keeps working.
+- **New metrics, each added only where it's accurately computable**:
+  "Feed per dozen eggs" is shown always (well-defined even aggregated
+  across batches); "Mortality rate %" and "Profit per bird placed"
+  appear only when one batch is selected, since averaging either across
+  batches of different sizes/ages would be misleading. "Revenue by
+  product" (the exact mirror of the pre-existing "Expenses by category")
+  and "Top customers" were added to the Financial report — both named
+  directly in spec §31, and missing entirely before. Deliberately **not**
+  added: hen-day egg-production % and any "industry benchmark" mortality
+  comparison — both would need either data this app doesn't capture (a
+  daily live-bird count) or presenting a fabricated benchmark as fact,
+  which conflicts with this app's existing AI-honesty stance
+  (`predictProductionTrend`'s "insufficient data" over a made-up number).
+- **An Analytics tile row** above the three report cards — Eggs, Feed
+  used, Mortality, Feed/dozen eggs, Revenue, Expenses, Profit, plus the
+  two batch-only metrics when applicable — computed from the exact same
+  filtered fetch as the cards below (one data-fetch, so the tiles and
+  the detailed tables can never disagree), with a plain-language line
+  above them stating what's currently selected ("All batches · Last 30
+  days" / "RPT-A · 1–10 Jan 2026").
+- **On-screen "View"** toggle on each report card, next to the existing
+  PDF/CSV buttons — the same data, rendered as a real table in the app,
+  not only as a download.
+- **"Worth checking" suggestion**: reuses the notification feed that
+  already exists (`getNotifications`, the same one behind the bell icon)
+  rather than a second signal-detection system — an unread
+  `production_decline`/`mortality_alert` notification surfaces as a
+  one-line suggestion pointing at the relevant batch's reports; with
+  nothing to flag, a neutral generic tip shows instead, never a
+  fabricated "something's wrong" claim.
+
+**Verified** against a disposable synthetic tenant (2 batches, mixed
+daily records/sales/expenses, cleaned up afterward): the batch filter
+correctly isolated one flock's figures from the other's; a custom
+1-day range correctly included boundary-date records and excluded a
+record 9 days outside it; the sales→sale_items→customer join used by
+"Revenue by product"/"Top customers" was checked directly against the
+underlying rows (an itemized sale to a named customer, and a walk-in
+sale with no customer, both showing up exactly where expected — the
+named sale in Top Customers, both in Revenue by Product, and the
+walk-in correctly excluded from Top Customers); every hand-computed
+expectation (quick-sales sums, egg/feed/mortality totals, expense
+totals) matched the query results exactly. No migration or RLS change
+was needed for any of this — it's read/aggregation logic only.
+`npx tsc --noEmit`, `npx eslint .`, `npm run build` all clean.
+
 ## Real-world requirements audit
 
 A stakeholder (Naomi) sent a plain-language list of what a Brooding record,

@@ -25,6 +25,26 @@ interface NavItem {
   icon: typeof Home;
 }
 
+/** Every tab root across all three variants -- a page on this list is a
+ * primary destination (no back button makes sense there); anything else
+ * is a sub-page (BackButton, src/components/app/back-button.tsx, shows
+ * on it). Kept here, next to getItems() below, so the two lists can't
+ * drift apart. */
+export const NAV_ROOT_PATHS = [
+  "/app/home",
+  "/app/record",
+  "/app/flock",
+  "/app/sales",
+  "/app/advice",
+  "/app/more",
+  "/app/field",
+  "/app/field/visits",
+  "/app/tasks",
+  "/app/network",
+  "/app/team",
+  "/app/reports",
+] as const;
+
 // Only the farmer variant's labels are localized (spec §10 scope — see
 // src/lib/i18n/translations.ts). Field/admin variants stay English-only
 // for this pass.

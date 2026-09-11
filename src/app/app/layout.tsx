@@ -8,6 +8,7 @@ import { OfflineProvider } from "@/lib/offline/offline-context";
 import { OfflineBadge } from "@/components/app/offline-badge";
 import { NotificationBell } from "@/components/app/notification-bell";
 import { BottomNav, type NavVariant } from "@/components/app/bottom-nav";
+import { BackButton } from "@/components/app/back-button";
 import { SignOutLink } from "@/components/app/sign-out-link";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
@@ -50,7 +51,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       <div className="flex min-h-screen flex-col pb-20 print:pb-0">
         <header className="sticky top-0 z-20 border-b border-line bg-paper/90 px-5 py-3 backdrop-blur print:hidden">
           <div className={`mx-auto flex items-center justify-between ${containerClass}`}>
-            <span className="font-display text-lg font-medium text-ink">{title}</span>
+            <div className="flex min-w-0 items-center gap-1.5">
+              <BackButton />
+              <span className="truncate font-display text-lg font-medium text-ink">{title}</span>
+            </div>
             <div className="flex items-center gap-3">
               <OfflineBadge />
               <NotificationBell unreadCount={unreadCount} />
