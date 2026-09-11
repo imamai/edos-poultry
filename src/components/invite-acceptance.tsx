@@ -57,7 +57,15 @@ export function InviteAcceptance({
     const { error } = await supabase.rpc("poultryedos_accept_farmer_invite", { p_token: token });
     setBusy(false);
     if (error) {
-      setError(error.message.includes("farmer_already_claimed") ? "This farmer profile is already linked to an account." : error.message);
+      if (error.message.includes("farmer_already_claimed")) {
+        setError("This farmer profile is already linked to an account.");
+      } else if (error.message.includes("already_a_farmer_in_tenant")) {
+        setError(
+          "You're already registered as a different farmer on this account. This invite is for someone else — open it from their device or account instead, or ask them to open it themselves.",
+        );
+      } else {
+        setError(error.message);
+      }
       return;
     }
     router.push("/app/home");
