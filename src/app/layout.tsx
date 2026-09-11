@@ -18,11 +18,24 @@ export const metadata: Metadata = {
   title: "EDOS Poultry360",
   description: "Manage every flock. Every farmer. Every decision.",
   manifest: "/manifest.json",
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: "default",
+    title: "Poultry360",
+  },
 };
 
 export const viewport: Viewport = {
   width: "device-width",
   initialScale: 1,
+  // Lets the app draw edge-to-edge behind a notch/Dynamic Island/home
+  // indicator when installed as a standalone PWA -- required for the
+  // env(safe-area-inset-*) CSS already used in the app shell (header top
+  // padding, bottom nav's pb-[env(safe-area-inset-bottom)]) to resolve to
+  // anything other than 0. Without this, that CSS is silently inert, and
+  // a browser tab (which reserves that space itself via its own chrome)
+  // looks fine while the installed app doesn't.
+  viewportFit: "cover",
   themeColor: "#1d4d43",
 };
 

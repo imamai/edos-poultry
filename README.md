@@ -643,6 +643,36 @@ totals) matched the query results exactly. No migration or RLS change
 was needed for any of this — it's read/aggregation logic only.
 `npx tsc --noEmit`, `npx eslint .`, `npm run build` all clean.
 
+### PWA safe-area fix — installed app didn't fit the phone like the browser tab did
+
+Reported directly: the installed PWA (added to home screen) didn't fit
+the phone well, unlike opening the same app in a regular browser tab.
+Root cause, found by inspecting the actual generated `<meta
+name="viewport">` tag: the bottom nav (`pb-[env(safe-area-inset-bottom)]`,
+`src/components/app/bottom-nav.tsx`) already had safe-area-aware padding
+written — but the root viewport meta tag (`src/app/layout.tsx`) never
+set `viewport-fit=cover`, and without it, every `env(safe-area-inset-*)`
+CSS value resolves to `0` — that padding was silently inert. A regular
+browser tab never showed the problem because the browser's own address
+bar/chrome already reserves that space; a standalone installed PWA has
+no chrome, so content can sit right under a notch/Dynamic Island or
+behind the home-indicator gesture bar with nothing to stop it.
+
+Fixed: `viewportFit: "cover"` added to the `Viewport` export (confirmed
+in the built HTML output — the meta tag now reads `...,
+viewport-fit=cover`), plus the two places that needed to actually use
+the newly-unlocked safe-area values: the app shell's sticky header now
+adds `env(safe-area-inset-top)` on top of its existing padding, and the
+main content area's bottom padding (reserved for the fixed bottom nav)
+is now `calc(5rem + env(safe-area-inset-bottom))` instead of a flat
+`5rem` — a plain `5rem` would no longer be enough once the bottom nav
+itself grows taller by that same safe-area amount. Also added the
+`appleWebApp` metadata block (`capable`, `statusBarStyle: "default"`,
+`title`) — the standard set of tags iOS's home-screen install still
+looks for alongside the Web App Manifest. `npx tsc --noEmit`,
+`npx eslint .`, `npm run build` all clean; the emitted meta tags were
+confirmed directly in the build output.
+
 ## Real-world requirements audit
 
 A stakeholder (Naomi) sent a plain-language list of what a Brooding record,

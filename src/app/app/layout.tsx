@@ -48,8 +48,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <OfflineProvider>
-      <div className="flex min-h-screen flex-col pb-20 print:pb-0">
-        <header className="sticky top-0 z-20 border-b border-line bg-paper/90 px-5 py-3 backdrop-blur print:hidden">
+      <div className="flex min-h-screen flex-col pb-[calc(5rem+env(safe-area-inset-bottom))] print:pb-0">
+        <header className="sticky top-0 z-20 border-b border-line bg-paper/90 px-5 pb-3 pt-[calc(0.75rem+env(safe-area-inset-top))] backdrop-blur print:hidden">
           <div className={`mx-auto flex items-center justify-between ${containerClass}`}>
             <div className="flex min-w-0 items-center gap-1.5">
               <BackButton />
