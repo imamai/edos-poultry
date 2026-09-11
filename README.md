@@ -652,3 +652,14 @@ mean very different amounts of engineering:
   undercounting any multi-flock farm's actual sales; it now sums across
   every flock on the farm. `npx tsc --noEmit`, `npx eslint .`, and
   `npm run build` all clean.
+- **A related bug was found while sweeping for the same class of issue**:
+  `ensureDueNotifications()` only ever checked `farmerContext.flock` — the
+  same single "most recently placed active flock" default that caused the
+  batch-misattribution bug above. On a farm running more than one
+  concurrent batch, every flock except that one silently got no
+  vaccination-due reminder, no mortality alert, and no production-decline
+  warning, with nothing to indicate anything was being skipped. Fixed by
+  looping over every active flock on the farm (via `getAllFlocks`)
+  instead of just the default one; dedupe keys already include
+  `flock.id`, so this doesn't risk duplicate notifications.
+  `npx tsc --noEmit`, `npx eslint .`, `npm run build` all clean.
