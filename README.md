@@ -620,3 +620,35 @@ mean very different amounts of engineering:
   not been visually verified end-to-end. Please click through `/signup` →
   `/onboarding` → `/app/record` yourself, including toggling your browser's
   offline mode, before relying on it.
+- **A real bug was reported and fixed (migration `0027`)**:
+  `poultryedos_accept_farmer_invite()` only checked whether the invite's
+  *target* row already had a `user_id` — it never checked whether the
+  *accepting* account already held a different farmer profile in the same
+  tenant, which `poultryedos_farmers_user_idx` (one farmer per user per
+  tenant, migration `0002`) rejects outright. Reproduced exactly as
+  reported: a tenant owner opened an invite meant for a farmer they'd just
+  added while still logged into their own account, and got a raw
+  `duplicate key value violates unique constraint
+  "poultryedos_farmers_user_idx"` error. Fixed by checking for this case
+  explicitly before the update and raising a specific, readable error
+  (`already_a_farmer_in_tenant`) instead; the invite itself is untouched
+  and stays valid for the actual invitee.
+- **Another real bug was reported and fixed**: Expenses and Sales had no
+  batch selector at all — every entry was silently assigned to whichever
+  flock `getMyFarmerContext()` treated as "current" (the most recently
+  placed active one), so a farm running more than one concurrent batch
+  could have entries land on the wrong batch with no way to notice or
+  correct it. A live, read-only query against the real database confirmed
+  this had already happened on the production tenant: an expense and a
+  sale were split across two batches purely by flock creation order, not
+  by the owner's actual choice. Fixed by adding a Batch selector to both
+  log forms, showing each entry's real batch in the list (embedding
+  `poultryedos_flocks.batch_code`), and adding a shared inline
+  `BatchReassign` control so the two already-misattributed records can be
+  corrected once the owner confirms where they actually belong — they
+  were deliberately **not** auto-corrected, since guessing intent would
+  risk being wrong. Also fixed a related bug in the same pages: the Sales
+  page's "quick daily total" only summed `context.flock`'s daily records,
+  undercounting any multi-flock farm's actual sales; it now sums across
+  every flock on the farm. `npx tsc --noEmit`, `npx eslint .`, and
+  `npm run build` all clean.
