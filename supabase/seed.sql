@@ -41,9 +41,14 @@ insert into poultryedos_knowledge_base (tenant_id, title, category, poultry_type
 
 -- Subscription plans (spec §45). Limits are a resource -> max-count map; a
 -- missing key means "unlimited" for that resource (see
--- src/lib/data/subscriptions.ts). Prices are illustrative placeholders, not
--- real pricing decisions — an admin UI to edit these doesn't exist yet
--- (no super-admin role), so change them here and re-run this file.
+-- src/lib/data/subscriptions.ts). There is still no in-app "manage plans"
+-- screen (not even in the super-admin dashboard) — to change a price or
+-- limit, edit the literal here AND run the matching `update
+-- poultryedos_subscription_plans set ...` against the live project (this
+-- file re-running via `on conflict (code) do update` only reaches a fresh
+-- database; it does not auto-apply to the already-running one), so both
+-- stay in sync. Last real pricing change: Growth 1500 -> 2500 KES/month,
+-- 2026-09-11.
 insert into poultryedos_subscription_plans (code, name, price_cents, billing_interval, limits, sort_order) values
   ('starter', 'Starter', 0, 'monthly',
    -- farmers stays at 1 (that's the definition of this individual/starter
@@ -52,7 +57,7 @@ insert into poultryedos_subscription_plans (code, name, price_cents, billing_int
    -- normal) before hard enforcement blocks a write — keep this literal in
    -- sync with that migration so re-running this file can't regress it.
    '{"farmers": 1, "farms": 2, "houses": 5, "flocks": 5, "users": 2, "field_officers": 0}'::jsonb, 1),
-  ('growth', 'Growth', 150000, 'monthly',
+  ('growth', 'Growth', 250000, 'monthly',
    '{"farmers": 10, "farms": 10, "houses": 30, "flocks": 30, "users": 5, "field_officers": 2}'::jsonb, 2),
   ('professional', 'Professional', 450000, 'monthly',
    '{"farmers": 100, "farms": 150, "houses": 500, "flocks": 500, "users": 20, "field_officers": 10}'::jsonb, 3),

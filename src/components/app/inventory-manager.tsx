@@ -296,17 +296,27 @@ function PurchasesTab({
 
     let resolvedSupplierId = supplierId || null;
     if (!resolvedSupplierId && newSupplierName.trim()) {
-      const { data, error } = await supabase
-        .from("poultryedos_suppliers")
-        .insert({ tenant_id: tenantId, name: newSupplierName.trim() })
-        .select("id")
-        .single();
-      if (error || !data) {
-        setBusy(false);
-        setError(error?.message ?? "Could not create supplier");
-        return;
+      const typedName = newSupplierName.trim();
+      // Match an existing supplier case/whitespace-insensitively before
+      // creating a new row -- there's no unique constraint on the name,
+      // so a plain insert would silently duplicate a supplier that's
+      // already there under slightly different capitalization.
+      const existing = suppliers.find((s) => s.name.trim().toLowerCase() === typedName.toLowerCase());
+      if (existing) {
+        resolvedSupplierId = existing.id;
+      } else {
+        const { data, error } = await supabase
+          .from("poultryedos_suppliers")
+          .insert({ tenant_id: tenantId, name: typedName })
+          .select("id")
+          .single();
+        if (error || !data) {
+          setBusy(false);
+          setError(error?.message ?? "Could not create supplier");
+          return;
+        }
+        resolvedSupplierId = (data as { id: string }).id;
       }
-      resolvedSupplierId = (data as { id: string }).id;
     }
 
     const payloadItems = lines.map((l) => {
@@ -411,6 +421,7 @@ function PurchasesTab({
                 </select>
                 {!line.itemId && (
                   <input
+                    required
                     value={line.itemName}
                     onChange={(e) => updateLine(index, { itemName: e.target.value })}
                     placeholder="What are you buying?"
@@ -423,7 +434,7 @@ function PurchasesTab({
                     <input
                       type="number"
                       required
-                      min={0}
+                      min={0.01}
                       step="0.1"
                       value={line.quantity}
                       onChange={(e) => updateLine(index, { quantity: e.target.value })}
