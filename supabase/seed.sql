@@ -46,7 +46,12 @@ insert into poultryedos_knowledge_base (tenant_id, title, category, poultry_type
 -- (no super-admin role), so change them here and re-run this file.
 insert into poultryedos_subscription_plans (code, name, price_cents, billing_interval, limits, sort_order) values
   ('starter', 'Starter', 0, 'monthly',
-   '{"farmers": 1, "farms": 1, "houses": 3, "flocks": 3, "users": 1, "field_officers": 0}'::jsonb, 1),
+   -- farmers stays at 1 (that's the definition of this individual/starter
+   -- tier); the rest were loosened in migration 0022 to give a real
+   -- smallholder realistic headroom (multiple concurrent flocks/houses is
+   -- normal) before hard enforcement blocks a write — keep this literal in
+   -- sync with that migration so re-running this file can't regress it.
+   '{"farmers": 1, "farms": 2, "houses": 5, "flocks": 5, "users": 2, "field_officers": 0}'::jsonb, 1),
   ('growth', 'Growth', 150000, 'monthly',
    '{"farmers": 10, "farms": 10, "houses": 30, "flocks": 30, "users": 5, "field_officers": 2}'::jsonb, 2),
   ('professional', 'Professional', 450000, 'monthly',

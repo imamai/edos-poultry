@@ -166,8 +166,22 @@ articles) any time with `supabase/seed.sql` (idempotent).
   `deriveSubscriptionStatus()`, the same "derive, don't pre-compute"
   approach as `biosecurityScore()` — usage bars against the plan's
   configurable limits, and self-service plan switching. **Enforcement is
-  UI-level only**: there is no hard RLS/DB block on writes past a limit or
-  while suspended in this pass — see "Deliberately deferred" below.
+  now hard, at the database level** (migration `0022`, added once live
+  verification was possible): `poultryedos_is_subscription_active(tenant_id)`
+  is ANDed into the write policies of every core operational table
+  (farmers/farms/houses/flocks/daily records/health/vaccination/
+  medications/biosecurity/expenses/customers/sales/inventory/suppliers/
+  purchase orders/support tickets) — a suspended or cancelled tenant can no
+  longer write to any of them, full stop, while reads stay open (data is
+  never hidden, only new writes blocked). Plan limits (farmers/farms/
+  houses/flocks/team members/field officers) are enforced by `BEFORE
+  INSERT` triggers rather than RLS, since a trigger can tell "creating a
+  new row" apart from "editing an existing one" (a plan downgrade must
+  never retroactively block editing rows that already exceed a new, lower
+  limit) — every manager component already surfaces the raised error via
+  `error.message`, so no new UI was needed. Deliberately excluded from both
+  gates: billing/payment tables themselves, so a suspended tenant is never
+  locked out of paying to reactivate.
 - **M-Pesa** (spec §44): `src/lib/payments/mpesa.ts` implements the real
   Daraja STK-push request/response shape end-to-end (auth, STK push,
   callback parsing), gated behind `MPESA_*` env vars that are **unset in
@@ -316,13 +330,6 @@ mean very different amounts of engineering:
   `poultryedos_is_tenant_member()`, and new read policies added to every
   tenant-scoped table — a deliberately bigger, separate change, confirmed
   out of scope for this pass.
-- **Subscription/plan-limit enforcement is UI-level only**: usage bars and
-  upgrade prompts exist, but there is no hard RLS or trigger block that
-  actually prevents writes once a plan limit is exceeded or a subscription
-  is suspended. Building that touches the write policy of every
-  farmer/farm/flock/etc. table and was deliberately left for a pass that
-  can be live-verified end to end (this one couldn't — see "Database"
-  above on the Supabase MCP connection).
 - **M-Pesa is architecture-only, not live-tested**: no Safaricom sandbox
   credentials exist in this environment (see the Platform section above).
 - **USSD, WhatsApp, real SMS delivery**: the SMS provider interface is
@@ -394,6 +401,26 @@ mean very different amounts of engineering:
   (see `0004`/`0005`/`0011`) — without it, `anon` could invoke it directly
   via `/rest/v1/rpc/poultryedos_create_trial_subscription`. Fixed in
   `0021` and confirmed gone from the advisor report afterward.
+- **Hard subscription/plan-limit enforcement (migration `0022`/`0023`) was
+  live-verified end to end using a fully synthetic, disposable test user**
+  (a throwaway `auth.users` row created and deleted purely for this test,
+  never a real account — an earlier round of live testing on this
+  project's real owner account briefly gave it a second membership and
+  surfaced a real duplicate-tenant bug in `getMyMembership()`/
+  `getOnboardingState()`, fixed separately; real accounts are off-limits
+  for this kind of test from here on): created a tenant, inserted a
+  farmer (succeeded, then a second farmer correctly
+  rejected — "Your plan allows up to 1 farmers..."), two farms succeeded
+  and a third was rejected, a field-officer membership was rejected
+  immediately (starter plan's limit is 0), a second team member succeeded
+  and a third was rejected. Then set that tenant's subscription to
+  `cancelled` and confirmed an insert was blocked by RLS while reads
+  stayed fully visible, and confirmed the tenant could still insert an
+  M-Pesa transaction to pay and reactivate (no chicken-and-egg lockout).
+  Confirmed the real production tenant's actual usage sits comfortably
+  within the (slightly loosened) starter limits and its subscription
+  reads as active — nothing about this change affects it today. All test
+  data and the throwaway auth user were deleted afterward.
 - **Two more real bugs were caught this way, not left for you to find**:
   (1) `unique(tenant_id, code)` / `unique(tenant_id, name)` on the global
   reference tables (poultry types, expense categories) never actually
