@@ -26,11 +26,19 @@ export const getMyMembership = cache(async (): Promise<MembershipContext | null>
   } = await supabase.auth.getUser();
   if (!user) return null;
 
+  // The schema allows one user to hold active memberships in more than one
+  // tenant (a consultant who owns their own farm and also field-officers
+  // for someone else's, say) — order + limit(1) picks a deterministic one
+  // (the oldest) instead of .maybeSingle(), which silently returns null
+  // (not an error this code checked) the moment there's more than one row,
+  // incorrectly routing an already-onboarded user back to /onboarding.
   const { data: membership } = await supabase
     .from("poultryedos_tenant_memberships")
     .select("tenant_id, role")
     .eq("user_id", user.id)
     .eq("status", "active")
+    .order("created_at")
+    .limit(1)
     .maybeSingle();
   if (!membership) return null;
 
@@ -60,6 +68,8 @@ export const getMyFarmerContext = cache(async (): Promise<FarmerContext | null> 
     .select("tenant_id")
     .eq("user_id", user.id)
     .eq("status", "active")
+    .order("created_at")
+    .limit(1)
     .maybeSingle();
   if (!membership) return null;
 

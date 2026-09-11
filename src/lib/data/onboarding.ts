@@ -20,11 +20,19 @@ export async function getOnboardingState(): Promise<OnboardingState> {
   const empty: OnboardingState = { tenant: null, farmer: null, farm: null, house: null, flock: null };
   if (!user) return empty;
 
+  // See the identical note in src/lib/data/farmer.ts's getMyMembership():
+  // a user can hold more than one active membership, and .maybeSingle()
+  // alone silently returns null (not a checked error) rather than erroring
+  // when it does — order + limit(1) makes the pick deterministic instead
+  // of accidentally routing an already-onboarded user back through the
+  // wizard, which would create a duplicate tenant.
   const { data: membership } = await supabase
     .from("poultryedos_tenant_memberships")
     .select("tenant_id")
     .eq("user_id", user.id)
     .eq("status", "active")
+    .order("created_at")
+    .limit(1)
     .maybeSingle();
 
   if (!membership) return empty;
