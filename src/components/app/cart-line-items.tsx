@@ -77,7 +77,7 @@ export function CartLineItems({ lines, onChange }: { lines: CartLineDraft[]; onC
                 type="number"
                 required
                 min={0.01}
-                step="0.1"
+                step="any"
                 value={line.quantity}
                 onChange={(e) => updateLine(index, { quantity: e.target.value })}
                 className="mt-1 w-full rounded-lg border border-line-strong px-3 py-2 text-sm outline-none focus:border-primary"
