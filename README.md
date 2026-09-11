@@ -20,6 +20,8 @@ below before assuming any given feature exists.
 - IndexedDB-backed offline queue (native API, no external dependency) + a
   minimal service worker for app-shell resilience — see "Offline support"
   below for exactly what this does and doesn't cover.
+- **Leaflet** + free OpenStreetMap tiles for maps (no paid API key) —
+  see "Maps" below.
 
 ## Getting started
 
@@ -224,6 +226,46 @@ articles) any time with `supabase/seed.sql` (idempotent).
   Every width is an upper bound, not a fixed size, so phone rendering is
   unchanged.
 
+### English + Swahili (phase 7 follow-up, spec §10)
+
+Scoped deliberately, not attempted as a full-app translation: covers
+exactly the "Simple Farmer Mode" 60-second daily flow (spec §8) — the
+farmer bottom nav's labels, the Home dashboard, and Record Today, every
+visible string. Admin/network/CMS/report screens and the Advice
+library's actual article content (stored data, not UI chrome — a
+different, much larger task) stay English-only for this pass.
+
+- `src/lib/i18n/translations.ts` holds both dictionaries; adding a third
+  language means adding one more key set there, nothing else, since all
+  copy already lived in components with no logic depending on display
+  strings (as `poultryedos_tenants.locale` — present since migration
+  `0001` but unused until now — already assumed).
+- The preference is tenant-wide, not per-user: a `LanguageToggle` on the
+  Home page lets the tenant flip between EN/SW, gated by the same
+  owner/admin-only RLS policy that already governed
+  `poultryedos_tenants` updates. For the individual-smallholder tenant
+  this feature targets, the farmer already *is* the owner, so this is
+  effectively "my language" — a farmer-role member of a multi-farmer
+  tenant can't change it, a deliberate scope line rather than building
+  per-user locale preferences.
+- Dynamically-generated text (the mortality alert's message, a farmer's
+  own name) stays English/as-entered — only static UI copy is translated.
+
+### Maps (phase 7 follow-up, spec §37/61)
+
+`src/components/app/map-view.tsx` wraps Leaflet directly (not
+`react-leaflet` — one fewer dependency) against free OpenStreetMap tiles,
+no API key needed. Dynamically imported with `ssr: false` since Leaflet
+touches `window` at module load and can't run server-side.
+
+Scoped to what already has real data: field visits capture GPS when a
+field officer marks one "Visited" (existing behavior, unchanged), so
+`/app/field/visits` now renders a map of every visit that has a location,
+pinned and labeled with farmer name + status, above the existing list.
+**Farm-location mapping was deliberately not built** — see "Deliberately
+deferred" below on why (no farm GPS is ever captured anywhere yet, so that
+map would only ever render empty).
+
 ### Who is the "main" farmer?
 
 Deliberately: there isn't one, and we didn't add a flag pretending there
@@ -319,8 +361,13 @@ mean very different amounts of engineering:
   field officers exists now, but there's no separate "cooperative"
   organization type, input-distribution tracking, contract terms, or any
   marketplace listing/matching between farmers and buyers.
-- **Maps** (§37/61): field visits capture GPS coordinates, but there's no
-  map view rendering farm/farmer locations or field officer routes yet.
+- **Farm-location mapping** (§61's "farm locations"): a farm map needs farm
+  GPS coordinates, and nothing in the app has ever captured them —
+  `poultryedos_farms.gps_lat/gps_lng` exist in the schema (migration
+  `0002`) but no onboarding step, form, or edit UI sets them, and there's
+  no farm-profile/edit page at all yet to add that capture to. Field visit
+  locations, which *are* captured today, now have a real map — see
+  "Maps" below.
 - **Cross-tenant super admin** (spec §5/67): every RLS policy in this app
   is scoped to "members of one tenant" — there is no platform-level role
   that can see across every tenant. Phase 7's CMS, plan catalog, and
@@ -344,10 +391,6 @@ mean very different amounts of engineering:
   feed, a vial of vaccine). A multi-line PO system is real added
   complexity worth building when there's an actual business ordering many
   items in one purchase, not before.
-- **Swahili localization** (§10): the architecture (all copy in components,
-  no business logic depending on display strings) doesn't block adding it,
-  but no translation dictionary exists yet — every label is hardcoded
-  English.
 - **Real brand icon assets**: `public/icon.svg` is a placeholder mark, not
   real EDOS Poultry360 branding.
 

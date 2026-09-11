@@ -15,36 +15,59 @@ import {
   LayoutDashboard,
   FileBarChart,
 } from "lucide-react";
+import { getDictionary } from "@/lib/i18n/translations";
 
 export type NavVariant = "farmer" | "field" | "admin";
 
-const ITEMS: Record<NavVariant, { href: string; label: string; icon: typeof Home }[]> = {
-  farmer: [
-    { href: "/app/home", label: "Home", icon: Home },
-    { href: "/app/record", label: "Record", icon: ClipboardList },
-    { href: "/app/flock", label: "Flock", icon: Bird },
-    { href: "/app/sales", label: "Sales", icon: Wallet },
-    { href: "/app/advice", label: "Advice", icon: BookOpen },
-    { href: "/app/more", label: "More", icon: MoreHorizontal },
-  ],
-  field: [
-    { href: "/app/field", label: "Farmers", icon: Users },
-    { href: "/app/field/visits", label: "Visits", icon: MapPin },
-    { href: "/app/tasks", label: "Tasks", icon: ListChecks },
-    { href: "/app/advice", label: "Advice", icon: BookOpen },
-  ],
-  admin: [
+interface NavItem {
+  href: string;
+  label: string;
+  icon: typeof Home;
+}
+
+// Only the farmer variant's labels are localized (spec §10 scope — see
+// src/lib/i18n/translations.ts). Field/admin variants stay English-only
+// for this pass.
+function getItems(variant: NavVariant, locale?: string): NavItem[] {
+  if (variant === "farmer") {
+    const nav = getDictionary(locale).nav;
+    return [
+      { href: "/app/home", label: nav.home, icon: Home },
+      { href: "/app/record", label: nav.record, icon: ClipboardList },
+      { href: "/app/flock", label: nav.flock, icon: Bird },
+      { href: "/app/sales", label: nav.sales, icon: Wallet },
+      { href: "/app/advice", label: nav.advice, icon: BookOpen },
+      { href: "/app/more", label: nav.more, icon: MoreHorizontal },
+    ];
+  }
+  if (variant === "field") {
+    return [
+      { href: "/app/field", label: "Farmers", icon: Users },
+      { href: "/app/field/visits", label: "Visits", icon: MapPin },
+      { href: "/app/tasks", label: "Tasks", icon: ListChecks },
+      { href: "/app/advice", label: "Advice", icon: BookOpen },
+    ];
+  }
+  return [
     { href: "/app/network", label: "Network", icon: LayoutDashboard },
     { href: "/app/team", label: "Team", icon: Users },
     { href: "/app/tasks", label: "Tasks", icon: ListChecks },
     { href: "/app/reports", label: "Reports", icon: FileBarChart },
     { href: "/app/more", label: "More", icon: MoreHorizontal },
-  ],
-};
+  ];
+}
 
-export function BottomNav({ variant, containerClass = "max-w-md" }: { variant: NavVariant; containerClass?: string }) {
+export function BottomNav({
+  variant,
+  containerClass = "max-w-md",
+  locale,
+}: {
+  variant: NavVariant;
+  containerClass?: string;
+  locale?: string;
+}) {
   const pathname = usePathname();
-  const items = ITEMS[variant];
+  const items = getItems(variant, locale);
 
   // Pick the most specific matching href so a nested route (e.g.
   // /app/field/visits) doesn't also light up a sibling tab whose href is

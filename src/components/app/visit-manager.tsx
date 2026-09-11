@@ -1,9 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
+import dynamic from "next/dynamic";
 import { createClient } from "@/lib/supabase/client";
 import type { Farmer, FieldVisit, FieldVisitStatus } from "@/lib/database.types";
+
+// Leaflet touches `window` at module load, so it can never run during SSR
+// — dynamic-import it client-only rather than importing MapView directly.
+const MapView = dynamic(() => import("./map-view").then((m) => m.MapView), { ssr: false });
 
 const SEQUENCE: FieldVisitStatus[] = [
   "assigned",
@@ -43,6 +48,20 @@ export function VisitManager({
   const [farmerId, setFarmerId] = useState(farmers[0]?.id ?? "");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Only visits that actually captured GPS (spec §61) — a visit marked
+  // "visited" or later, best-effort (geolocation can fail or be denied).
+  const mapPoints = useMemo(
+    () =>
+      visits
+        .filter((v): v is typeof v & { gps_lat: number; gps_lng: number } => v.gps_lat != null && v.gps_lng != null)
+        .map((v) => ({
+          lat: v.gps_lat,
+          lng: v.gps_lng,
+          label: `${v.poultryedos_farmers?.full_name ?? "Farmer"} — ${LABELS[v.status]}`,
+        })),
+    [visits],
+  );
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
@@ -101,6 +120,12 @@ export function VisitManager({
             </button>
           </div>
         </form>
+      )}
+
+      {mapPoints.length > 0 && (
+        <div className="mt-4">
+          <MapView points={mapPoints} height={240} />
+        </div>
       )}
 
       <div className="mt-4 space-y-3">

@@ -4,6 +4,7 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import type { DailyRecord } from "@/lib/database.types";
 import { useOffline } from "@/lib/offline/offline-context";
+import { getDictionary } from "@/lib/i18n/translations";
 
 function numberField(v: string): number {
   const n = Number(v);
@@ -14,13 +15,16 @@ export function RecordTodayForm({
   tenantId,
   flockId,
   existing,
+  locale,
 }: {
   tenantId: string;
   flockId: string;
   existing: DailyRecord | null;
+  locale?: string;
 }) {
   const router = useRouter();
   const { submitDailyRecord } = useOffline();
+  const t = getDictionary(locale).record;
 
   const [mortality, setMortality] = useState(String(existing?.mortality ?? 0));
   const [eggs, setEggs] = useState(existing?.eggs_collected != null ? String(existing.eggs_collected) : "");
@@ -61,16 +65,14 @@ export function RecordTodayForm({
   if (saved) {
     return (
       <div className="mt-8 rounded-2xl border border-success bg-success-soft p-6 text-center">
-        <p className="font-medium text-success">Today&apos;s record is saved.</p>
-        <p className="mt-1 text-sm text-ink-soft">
-          It will sync automatically if you were offline.
-        </p>
+        <p className="font-medium text-success">{t.savedTitle}</p>
+        <p className="mt-1 text-sm text-ink-soft">{t.savedBody}</p>
         <button
           type="button"
           onClick={() => router.push("/app/home")}
           className="mt-4 rounded-full bg-ink px-5 py-2.5 text-sm font-medium text-paper hover:bg-primary-dark"
         >
-          Back to home
+          {t.backHome}
         </button>
       </div>
     );
@@ -78,17 +80,12 @@ export function RecordTodayForm({
 
   return (
     <form onSubmit={handleSubmit} className="mt-6 space-y-5">
-      <NumberInput label="Deaths today" value={mortality} onChange={setMortality} placeholder="0" />
-      <NumberInput label="Eggs collected" value={eggs} onChange={setEggs} placeholder="e.g. 198" />
-      <NumberInput label="Feed used (kg)" value={feedKg} onChange={setFeedKg} placeholder="e.g. 34" step="0.1" />
-      <NumberInput
-        label="Sales today (KES)"
-        value={salesAmount}
-        onChange={setSalesAmount}
-        placeholder="e.g. 4500"
-      />
+      <NumberInput label={t.deaths} value={mortality} onChange={setMortality} placeholder="0" />
+      <NumberInput label={t.eggs} value={eggs} onChange={setEggs} placeholder="e.g. 198" />
+      <NumberInput label={t.feed} value={feedKg} onChange={setFeedKg} placeholder="e.g. 34" step="0.1" />
+      <NumberInput label={t.sales} value={salesAmount} onChange={setSalesAmount} placeholder="e.g. 4500" />
       <div>
-        <label className="text-sm font-medium text-ink-soft">Notes (optional)</label>
+        <label className="text-sm font-medium text-ink-soft">{t.notes}</label>
         <textarea
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
@@ -102,7 +99,7 @@ export function RecordTodayForm({
         disabled={busy}
         className="w-full rounded-full bg-primary px-6 py-3.5 text-base font-medium text-white shadow-card hover:bg-primary-dark disabled:opacity-60"
       >
-        {busy ? "Saving…" : "Save today's record"}
+        {busy ? t.saving : t.save}
       </button>
     </form>
   );

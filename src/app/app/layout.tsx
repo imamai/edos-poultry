@@ -57,7 +57,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         </header>
         <main className={`mx-auto w-full flex-1 px-5 py-5 print:max-w-none print:px-0 ${containerClass}`}>{children}</main>
         <div className="print:hidden">
-          <BottomNav variant={variant} containerClass={containerClass} />
+          <BottomNav variant={variant} containerClass={containerClass} locale={membership.tenant.locale} />
         </div>
       </div>
     </OfflineProvider>

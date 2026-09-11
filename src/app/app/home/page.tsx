@@ -3,13 +3,9 @@ import { Egg, Skull, Wheat, Wallet, TriangleAlert, Syringe, Megaphone } from "lu
 import { getMyFarmerContext, getRecentDailyRecords, getUpcomingVaccinations, computeMortalityAlert, resolveSelectedFlock } from "@/lib/data/farmer";
 import { getAnnouncements, activeAnnouncements } from "@/lib/data/cms";
 import { formatMoney } from "@/lib/money";
+import { getDictionary } from "@/lib/i18n/translations";
 import { FlockSwitcher } from "@/components/app/flock-switcher";
-
-function greeting(hour: number) {
-  if (hour < 12) return "Good morning";
-  if (hour < 17) return "Good afternoon";
-  return "Good evening";
-}
+import { LanguageToggle } from "@/components/app/language-toggle";
 
 export default async function FarmerHomePage({
   searchParams,
@@ -20,20 +16,22 @@ export default async function FarmerHomePage({
   if (!context) return null;
   const { farmer, tenant } = context;
   const { flock: requestedFlockId } = await searchParams;
+  const t = getDictionary(tenant.locale).home;
 
   const hour = Number(
     new Intl.DateTimeFormat("en-KE", { hour: "numeric", hour12: false, timeZone: tenant.timezone }).format(
       new Date(),
     ),
   );
+  const greeting = hour < 12 ? t.goodMorning : hour < 17 ? t.goodAfternoon : t.goodEvening;
 
   const { flock, allFlocks } = await resolveSelectedFlock(context.farm.id, requestedFlockId);
 
   if (!flock) {
     return (
       <div className="rounded-2xl border border-dashed border-line-strong p-8 text-center">
-        <p className="text-ink-soft">No active flock yet.</p>
-        <p className="mt-1 text-sm text-ink-faint">Add a flock to start recording production.</p>
+        <p className="text-ink-soft">{t.noFlock}</p>
+        <p className="mt-1 text-sm text-ink-faint">{t.noFlockHint}</p>
       </div>
     );
   }
@@ -52,9 +50,12 @@ export default async function FarmerHomePage({
 
   return (
     <div className="space-y-5">
-      <div>
-        <p className="text-sm text-ink-faint">{greeting(hour)},</p>
-        <h1 className="font-display text-2xl font-medium text-ink">{farmer.full_name.split(" ")[0]}</h1>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-sm text-ink-faint">{greeting},</p>
+          <h1 className="font-display text-2xl font-medium text-ink">{farmer.full_name.split(" ")[0]}</h1>
+        </div>
+        <LanguageToggle tenantId={tenant.id} locale={tenant.locale} />
       </div>
 
       <FlockSwitcher flocks={allFlocks} selectedId={flock.id} />
@@ -78,34 +79,36 @@ export default async function FarmerHomePage({
 
       <div>
         <p className="text-sm font-medium text-ink-soft">
-          {allFlocks.length > 1 ? `${flock.batch_code} today` : "Your farm today"}
+          {allFlocks.length > 1 ? `${flock.batch_code} ${t.todayLabel}` : t.yourFarmToday}
         </p>
         <div className="mt-2 grid grid-cols-2 gap-3 md:grid-cols-4">
-          <StatCard icon={<Skull className="h-5 w-5 text-danger" />} label="Birds alive" value={String(flock.current_quantity)} />
-          <StatCard icon={<Egg className="h-5 w-5 text-accent-dark" />} label="Eggs today" value={todayEggs === null ? "—" : String(todayEggs)} />
-          <StatCard icon={<Wheat className="h-5 w-5 text-primary" />} label="Feed used" value={todayFeed === null ? "—" : `${todayFeed} kg`} />
-          <StatCard icon={<Wallet className="h-5 w-5 text-success" />} label="Sales today" value={formatMoney(todaySales, tenant.currency)} />
+          <StatCard icon={<Skull className="h-5 w-5 text-danger" />} label={t.birdsAlive} value={String(flock.current_quantity)} />
+          <StatCard icon={<Egg className="h-5 w-5 text-accent-dark" />} label={t.eggsToday} value={todayEggs === null ? "—" : String(todayEggs)} />
+          <StatCard icon={<Wheat className="h-5 w-5 text-primary" />} label={t.feedUsed} value={todayFeed === null ? "—" : `${todayFeed} kg`} />
+          <StatCard icon={<Wallet className="h-5 w-5 text-success" />} label={t.salesToday} value={formatMoney(todaySales, tenant.currency)} />
         </div>
         {!today && (
           <p className="mt-2 text-xs text-ink-faint">
-            You haven&apos;t recorded today yet.{" "}
+            {t.notRecordedYet}{" "}
             <Link href={`/app/record?flock=${flock.id}`} className="text-primary hover:underline">
-              Record today&apos;s numbers →
+              {t.recordLink}
             </Link>
           </p>
         )}
         {todayMortality > 0 && (
-          <p className="mt-2 text-xs text-ink-faint">{todayMortality} bird(s) lost today.</p>
+          <p className="mt-2 text-xs text-ink-faint">
+            {todayMortality} {t.birdsLostToday}
+          </p>
         )}
       </div>
 
       {vaccinations.length > 0 && (
         <div className="rounded-xl border border-line bg-paper-raised p-4">
           <p className="flex items-center gap-2 text-sm font-medium text-ink-soft">
-            <Syringe className="h-4 w-4" /> Upcoming vaccination
+            <Syringe className="h-4 w-4" /> {t.upcomingVaccination}
           </p>
           <p className="mt-1 text-sm text-ink">
-            {vaccinations[0].vaccine_name} — due{" "}
+            {vaccinations[0].vaccine_name} — {t.due}{" "}
             {new Date(vaccinations[0].scheduled_date).toLocaleDateString("en-KE", {
               day: "numeric",
               month: "short",
@@ -118,7 +121,7 @@ export default async function FarmerHomePage({
         href={`/app/record?flock=${flock.id}`}
         className="block rounded-full bg-primary px-6 py-3.5 text-center text-sm font-medium text-white shadow-card hover:bg-primary-dark"
       >
-        Record today&apos;s numbers
+        {t.recordButton}
       </Link>
     </div>
   );
