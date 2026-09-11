@@ -1,6 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import type { FarmerContext, MembershipContext } from "@/lib/data/farmer";
-import { getRecentDailyRecords, computeMortalityAlert } from "@/lib/data/farmer";
+import { getAllFlocks, getRecentDailyRecords, computeMortalityAlert } from "@/lib/data/farmer";
 import { getTenantSubscription, deriveSubscriptionStatus } from "@/lib/data/subscriptions";
 import { predictFeedStockout, predictProductionTrend } from "@/lib/ai/predictions";
 import type { Notification } from "@/lib/database.types";
@@ -66,52 +66,59 @@ export async function ensureDueNotifications(
     const drafts: DraftNotification[] = [];
     const today = new Date().toISOString().slice(0, 10);
 
-    if (farmerContext?.flock) {
-      const flock = farmerContext.flock;
+    if (farmerContext?.farm) {
+      // farmerContext.flock is only ever the single "most recently placed
+      // active" flock — checking just that one silently skipped vaccination/
+      // mortality/production alerts for every other concurrent batch on a
+      // multi-flock farm. Check all of the farm's active flocks instead.
+      const allFlocks = await getAllFlocks(farmerContext.farm.id);
+      const activeFlocks = allFlocks.filter((f) => f.status === "active");
 
       const supabase = await createClient();
-      const { data: dueVaccinations } = await supabase
-        .from("poultryedos_vaccination_schedules")
-        .select("id, vaccine_name, scheduled_date")
-        .eq("flock_id", flock.id)
-        .is("administered_date", null)
-        .lte("scheduled_date", addDays(today, 2))
-        .order("scheduled_date");
+      for (const flock of activeFlocks) {
+        const { data: dueVaccinations } = await supabase
+          .from("poultryedos_vaccination_schedules")
+          .select("id, vaccine_name, scheduled_date")
+          .eq("flock_id", flock.id)
+          .is("administered_date", null)
+          .lte("scheduled_date", addDays(today, 2))
+          .order("scheduled_date");
 
-      for (const v of dueVaccinations ?? []) {
-        drafts.push({
-          type: "vaccination_due",
-          title: `${v.vaccine_name} due soon`,
-          body: `${flock.batch_code} is due for ${v.vaccine_name} on ${v.scheduled_date}.`,
-          link: `/app/vaccination?flock=${flock.id}`,
-          dedupeKey: `vaccination_due:${v.id}`,
-        });
-      }
+        for (const v of dueVaccinations ?? []) {
+          drafts.push({
+            type: "vaccination_due",
+            title: `${v.vaccine_name} due soon`,
+            body: `${flock.batch_code} is due for ${v.vaccine_name} on ${v.scheduled_date}.`,
+            link: `/app/vaccination?flock=${flock.id}`,
+            dedupeKey: `vaccination_due:${v.id}`,
+          });
+        }
 
-      const records = await getRecentDailyRecords(flock.id, 21);
-      const mortalityAlert = records[0]?.record_date === today ? computeMortalityAlert(records) : null;
-      if (mortalityAlert) {
-        drafts.push({
-          type: "mortality_alert",
-          title: `Mortality alert — ${flock.batch_code}`,
-          body: mortalityAlert.message,
-          link: `/app/home?flock=${flock.id}`,
-          dedupeKey: `mortality_alert:${flock.id}:${today}`,
-        });
-      }
+        const records = await getRecentDailyRecords(flock.id, 21);
+        const mortalityAlert = records[0]?.record_date === today ? computeMortalityAlert(records) : null;
+        if (mortalityAlert) {
+          drafts.push({
+            type: "mortality_alert",
+            title: `Mortality alert — ${flock.batch_code}`,
+            body: mortalityAlert.message,
+            link: `/app/home?flock=${flock.id}`,
+            dedupeKey: `mortality_alert:${flock.id}:${today}`,
+          });
+        }
 
-      const trend = predictProductionTrend(records);
-      if (trend.status === "ok" && trend.value.direction === "down") {
-        drafts.push({
-          type: "production_decline",
-          title: `Egg production declining — ${flock.batch_code}`,
-          body: trend.explanation,
-          link: `/app/flock/${flock.id}`,
-          // Re-derive weekly rather than daily — a trend doesn't meaningfully
-          // change day to day, and re-notifying every single day would be
-          // noise rather than a fresh signal.
-          dedupeKey: `production_decline:${flock.id}:${weekOf(today)}`,
-        });
+        const trend = predictProductionTrend(records);
+        if (trend.status === "ok" && trend.value.direction === "down") {
+          drafts.push({
+            type: "production_decline",
+            title: `Egg production declining — ${flock.batch_code}`,
+            body: trend.explanation,
+            link: `/app/flock/${flock.id}`,
+            // Re-derive weekly rather than daily — a trend doesn't meaningfully
+            // change day to day, and re-notifying every single day would be
+            // noise rather than a fresh signal.
+            dedupeKey: `production_decline:${flock.id}:${weekOf(today)}`,
+          });
+        }
       }
     }
 
