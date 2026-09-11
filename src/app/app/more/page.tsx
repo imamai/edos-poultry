@@ -15,8 +15,10 @@ import {
   Sparkles,
   Bot,
   LayoutDashboard,
+  ShieldAlert,
 } from "lucide-react";
 import { getMyMembership, getMyFarmerContext } from "@/lib/data/farmer";
+import { isSuperAdmin } from "@/lib/data/super-admin";
 
 type MoreItem = { href: string; label: string; desc: string; icon: typeof HeartPulse };
 
@@ -42,7 +44,11 @@ export default async function MorePage() {
   const farmerContext = await getMyFarmerContext();
   const isOwnerOrAdmin = membership.role === "owner" || membership.role === "admin";
 
-  const items: MoreItem[] = [...INTELLIGENCE_ITEMS];
+  const items: MoreItem[] = [];
+  if (await isSuperAdmin()) {
+    items.push({ href: "/app/superadmin", label: "Super Admin", desc: "Every tenant on the platform", icon: ShieldAlert });
+  }
+  items.push(...INTELLIGENCE_ITEMS);
   if (farmerContext) items.push(...FARMER_ITEMS);
   if (isOwnerOrAdmin) {
     items.push({ href: "/app/billing", label: "Billing", desc: "Plan, usage, and payments", icon: CreditCard });

@@ -345,6 +345,49 @@ See "Deliberately deferred" below for exactly what that rules out.
   new functions with grant issues — the only schema change was the
   constraint). Test data and the throwaway auth user deleted afterward.
 
+### Cross-tenant super admin (spec §5/67)
+
+A single real account — the platform's sole owner — can now see and act
+across every Poultry360 tenant, at `/app/superadmin` (surfaced on More
+only for that account). This was explicitly deferred earlier as a bigger,
+more security-sensitive change; the design landed on here is narrower
+than what was originally sketched:
+
+- **No RLS was loosened on any base table.** The obvious approach — OR a
+  `poultryedos_is_super_admin()` clause into the read policies of
+  `poultryedos_tenants`/`subscriptions`/`farmers`/`farms`/`flocks` — was
+  considered and rejected: it would permanently widen five tables'
+  security posture to support one narrow admin screen. Instead, following
+  the existing `poultryedos_list_tenant_members` pattern (migration
+  `0015`), two `SECURITY DEFINER` RPCs
+  (`poultryedos_super_admin_list_tenants`,
+  `poultryedos_super_admin_set_tenant_status`) each check the new
+  `poultryedos_super_admins` allowlist internally and read/write across
+  tenants only inside that one audited function — no table's RLS changed
+  at all.
+- **The allowlist has no write policy, anywhere.** It can only be changed
+  by direct SQL — the same way its one seed row was inserted — so no
+  session, however compromised, can ever grant itself access.
+- **Suspend/reactivate reuses the exact enforcement already built and
+  verified in migration `0022`** (`poultryedos_is_subscription_active()`)
+  rather than a second, independent kill-switch: suspending sets the
+  tenant's subscription to `cancelled`, which every already-gated write
+  policy immediately honors.
+- The dashboard is a real desktop `<table>`, not the stacked-card pattern
+  used elsewhere — the super admin is expected to be on a PC the large
+  majority of the time, so the app-wide layout width logic
+  (`src/app/app/layout.tsx`) now also gives that one account the wide
+  admin layout everywhere, even on pages where he'd otherwise get the
+  narrow farmer width (he also has his own farmer profile).
+- **Live-verified**: a non-super-admin calling either RPC (including the
+  target tenant's *own* owner, ruling out self-escalation) was rejected
+  with `not_authorized`; the seeded real account correctly listed every
+  tenant; suspend/reactivate was exercised against a disposable synthetic
+  tenant — suspending blocked a real write attempt via the existing RLS
+  gate, reactivating immediately restored it. The real production tenant
+  was only ever read during verification, never suspended. Test tenant
+  and throwaway auth user deleted afterward.
+
 ### Who is the "main" farmer?
 
 Deliberately: there isn't one, and we didn't add a flag pretending there
@@ -447,15 +490,6 @@ mean very different amounts of engineering:
   no farm-profile/edit page at all yet to add that capture to. Field visit
   locations, which *are* captured today, now have a real map — see
   "Maps" below.
-- **Cross-tenant super admin** (spec §5/67): every RLS policy in this app
-  is scoped to "members of one tenant" — there is no platform-level role
-  that can see across every tenant. Phase 7's CMS, plan catalog, and
-  billing are all tenant-scoped (an owner/admin manages their *own*
-  tenant); a genuine super admin would need a new allowlist table, a
-  `poultryedos_is_super_admin()` check mirroring
-  `poultryedos_is_tenant_member()`, and new read policies added to every
-  tenant-scoped table — a deliberately bigger, separate change, confirmed
-  out of scope for this pass.
 - **M-Pesa is architecture-only, not live-tested**: no Safaricom sandbox
   credentials exist in this environment (see the Platform section above).
 - **USSD, WhatsApp, real SMS delivery**: the SMS provider interface is

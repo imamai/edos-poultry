@@ -3,6 +3,7 @@ import Link from "next/link";
 import { LifeBuoy } from "lucide-react";
 import { getMyMembership, getMyFarmerContext } from "@/lib/data/farmer";
 import { ensureDueNotifications, getUnreadNotificationCount } from "@/lib/data/notifications";
+import { isSuperAdmin } from "@/lib/data/super-admin";
 import { OfflineProvider } from "@/lib/offline/offline-context";
 import { OfflineBadge } from "@/components/app/offline-badge";
 import { NotificationBell } from "@/components/app/notification-bell";
@@ -36,8 +37,13 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   // (spec §6's "simple input" stays simple, it just isn't stretched thin
   // across a monitor); admin/field roles — the ones actually running a
   // network from a PC (spec §65: "Desktop is the expanded experience") —
-  // get noticeably more room for Network/Team/Reports.
-  const containerClass = variant === "farmer" ? "max-w-md md:max-w-xl lg:max-w-2xl" : "max-w-md md:max-w-2xl lg:max-w-5xl";
+  // get noticeably more room for Network/Team/Reports. The super admin
+  // gets the wide layout unconditionally, even if he also has his own
+  // farmer profile (variant would otherwise be "farmer"/narrow) — he's
+  // on a PC the large majority of the time reviewing the Super Admin
+  // table, per the user's own note.
+  const wide = variant !== "farmer" || (await isSuperAdmin());
+  const containerClass = wide ? "max-w-md md:max-w-2xl lg:max-w-5xl" : "max-w-md md:max-w-xl lg:max-w-2xl";
 
   return (
     <OfflineProvider>
