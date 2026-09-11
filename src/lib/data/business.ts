@@ -136,6 +136,7 @@ export interface FlockFinance {
   totalExpensesCents: number;
   profitCents: number;
   birdsSoldOrLost: number;
+  totalMortality: number;
 }
 
 export async function getFlockFinance(flockId: string): Promise<FlockFinance> {
@@ -150,6 +151,7 @@ export async function getFlockFinance(flockId: string): Promise<FlockFinance> {
   const revenueQuickSalesCents = (records ?? []).reduce((sum, r) => sum + (r.sales_amount_cents ?? 0), 0);
   const revenueItemizedSalesCents = (sales ?? []).reduce((sum, s) => sum + (s.total_amount_cents ?? 0), 0);
   const totalExpensesCents = (expenses ?? []).reduce((sum, e) => sum + (e.amount_cents ?? 0), 0);
+  const totalMortality = (records ?? []).reduce((sum, r) => sum + (r.mortality ?? 0), 0);
   const birdsSoldOrLost = (records ?? []).reduce((sum, r) => sum + (r.mortality ?? 0) + (r.birds_sold ?? 0), 0);
 
   const totalRevenueCents = revenueQuickSalesCents + revenueItemizedSalesCents;
@@ -161,5 +163,6 @@ export async function getFlockFinance(flockId: string): Promise<FlockFinance> {
     totalExpensesCents,
     profitCents: totalRevenueCents - totalExpensesCents,
     birdsSoldOrLost,
+    totalMortality,
   };
 }

@@ -1,24 +1,7 @@
 import { createClient } from "@/lib/supabase/server";
 import type { KnowledgeArticle } from "@/lib/database.types";
 
-const CATEGORY_LABELS: Record<string, string> = {
-  brooding: "Brooding",
-  feeding: "Feeding",
-  vaccination: "Vaccination",
-  biosecurity: "Biosecurity",
-  housing: "Housing",
-  egg_handling: "Egg handling",
-  disease_warning_signs: "Disease warning signs",
-  marketing: "Marketing",
-  record_keeping: "Record keeping",
-  profitability: "Profitability",
-  water_management: "Water management",
-  welfare: "Welfare",
-};
-
-export function categoryLabel(category: string) {
-  return CATEGORY_LABELS[category] ?? category;
-}
+export { categoryLabel } from "@/lib/knowledge-categories";
 
 export async function getKnowledgeArticles(tenantId: string): Promise<KnowledgeArticle[]> {
   const supabase = await createClient();

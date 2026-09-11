@@ -67,7 +67,9 @@ export function VaccinationManager({
   }
 
   const upcoming = schedules.filter((s) => !s.administered_date);
-  const done = schedules.filter((s) => s.administered_date);
+  const done = schedules
+    .filter((s) => s.administered_date)
+    .sort((a, b) => (a.administered_date! < b.administered_date! ? 1 : -1));
 
   return (
     <div>

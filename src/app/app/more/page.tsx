@@ -1,7 +1,23 @@
 import Link from "next/link";
-import { HeartPulse, Syringe, Pill, ShieldCheck, Receipt, Boxes, LineChart, Users, ChevronRight } from "lucide-react";
+import {
+  HeartPulse,
+  Syringe,
+  Pill,
+  ShieldCheck,
+  Receipt,
+  Boxes,
+  LineChart,
+  Users,
+  ChevronRight,
+  CreditCard,
+  FileText,
+  FileBarChart,
+} from "lucide-react";
+import { getMyMembership, getMyFarmerContext } from "@/lib/data/farmer";
 
-const ITEMS = [
+type MoreItem = { href: string; label: string; desc: string; icon: typeof HeartPulse };
+
+const FARMER_ITEMS: MoreItem[] = [
   { href: "/app/health", label: "Health", desc: "Symptoms, treatment, vet visits", icon: HeartPulse },
   { href: "/app/vaccination", label: "Vaccination", desc: "Schedule and history", icon: Syringe },
   { href: "/app/medications", label: "Medications", desc: "Antibiotics, multivitamins, dewormers", icon: Pill },
@@ -12,12 +28,29 @@ const ITEMS = [
   { href: "/app/finance", label: "Finance", desc: "Revenue, costs, and profit", icon: LineChart },
 ];
 
-export default function MorePage() {
+export default async function MorePage() {
+  const membership = await getMyMembership();
+  if (!membership) return null;
+  const farmerContext = await getMyFarmerContext();
+  const isOwnerOrAdmin = membership.role === "owner" || membership.role === "admin";
+
+  const items: MoreItem[] = [];
+  if (farmerContext) items.push(...FARMER_ITEMS);
+  if (isOwnerOrAdmin) {
+    items.push({ href: "/app/billing", label: "Billing", desc: "Plan, usage, and payments", icon: CreditCard });
+    items.push({ href: "/app/content", label: "Content", desc: "Advice articles and announcements", icon: FileText });
+    // The admin bottom nav already has a dedicated Reports tab — only add
+    // it here for a farmer-owner, whose bottom nav doesn't.
+    if (farmerContext) {
+      items.push({ href: "/app/reports", label: "Reports", desc: "Production, mortality, and financial reports", icon: FileBarChart });
+    }
+  }
+
   return (
     <div>
       <h1 className="font-display text-2xl font-medium tracking-tight text-ink">More</h1>
       <div className="mt-4 space-y-2">
-        {ITEMS.map((item) => {
+        {items.map((item) => {
           const Icon = item.icon;
           return (
             <Link

@@ -38,3 +38,23 @@ insert into poultryedos_knowledge_base (tenant_id, title, category, poultry_type
 (null, 'Simple record keeping that pays for itself', 'record_keeping', null,
  'The single most useful habit in poultry farming is writing down the same few numbers every day: birds alive, deaths, eggs collected, feed used, and money in from sales. On their own each number tells you little, but a week or two of consistent records lets you see trends you would otherwise miss — a slow decline in eggs, feed use creeping up without more birds to justify it, or mortality that is quietly higher than it used to be. Consistent daily records, even simple ones, are worth more than an occasional detailed one.')
 ;
+
+-- Subscription plans (spec §45). Limits are a resource -> max-count map; a
+-- missing key means "unlimited" for that resource (see
+-- src/lib/data/subscriptions.ts). Prices are illustrative placeholders, not
+-- real pricing decisions — an admin UI to edit these doesn't exist yet
+-- (no super-admin role), so change them here and re-run this file.
+insert into poultryedos_subscription_plans (code, name, price_cents, billing_interval, limits, sort_order) values
+  ('starter', 'Starter', 0, 'monthly',
+   '{"farmers": 1, "farms": 1, "houses": 3, "flocks": 3, "users": 1, "field_officers": 0}'::jsonb, 1),
+  ('growth', 'Growth', 150000, 'monthly',
+   '{"farmers": 10, "farms": 10, "houses": 30, "flocks": 30, "users": 5, "field_officers": 2}'::jsonb, 2),
+  ('professional', 'Professional', 450000, 'monthly',
+   '{"farmers": 100, "farms": 150, "houses": 500, "flocks": 500, "users": 20, "field_officers": 10}'::jsonb, 3),
+  ('enterprise', 'Enterprise', 1500000, 'monthly', '{}'::jsonb, 4)
+on conflict (code) do update set
+  name = excluded.name,
+  price_cents = excluded.price_cents,
+  billing_interval = excluded.billing_interval,
+  limits = excluded.limits,
+  sort_order = excluded.sort_order;

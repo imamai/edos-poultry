@@ -21,7 +21,7 @@ export default async function NetworkPage() {
       <h1 className="font-display text-2xl font-medium tracking-tight text-ink">Network</h1>
       <p className="mt-1 text-sm text-ink-soft">{membership.tenant.name} · last 7 days</p>
 
-      <div className="mt-4 grid grid-cols-2 gap-3">
+      <div className="mt-4 grid grid-cols-2 gap-3 sm:grid-cols-4">
         <Stat label="Farmers" value={String(summary.farmerCount)} />
         <Stat label="Farms" value={String(summary.farmCount)} />
         <Stat label="Active flocks" value={String(summary.flockCount)} />

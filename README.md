@@ -4,11 +4,12 @@ Manage every flock. Every farmer. Every decision.
 
 This repo currently implements the **smallholder farmer mode** vertical
 slice (spec phases 1–3), **Health & Business** (phases 4–5), **Field
-officers & networks** (phase 6), and a round of fixes driven by **real
-farmer requirements audited against the running app** (see "Real-world
-requirements audit" below) — the full 106-section product vision lives in
-[PRODUCT_SPEC.md](PRODUCT_SPEC.md). See "What's deferred" below before
-assuming any given feature exists.
+officers & networks** (phase 6), **Platform** (phase 7 — subscriptions,
+M-Pesa, SMS, notifications, CMS, reports; see below), and a round of fixes
+driven by **real farmer requirements audited against the running app** (see
+"Real-world requirements audit" below) — the full 106-section product
+vision lives in [PRODUCT_SPEC.md](PRODUCT_SPEC.md). See "What's deferred"
+below before assuming any given feature exists.
 
 ## Stack
 
@@ -155,6 +156,60 @@ articles) any time with `supabase/seed.sql` (idempotent).
   from the user's membership role and whether they have a farmer profile —
   not a client-side guess.
 
+### Platform (phase 7)
+
+- **Subscriptions** (spec §45/46): every tenant gets a 14-day trial on the
+  Starter plan automatically (a DB trigger on tenant creation — mirrors the
+  farmer-invite 14-day expiry pattern). `/app/billing` (owner/admin) shows
+  the plan, an *effective* status (trial/active/past_due/grace_period/
+  suspended/expired) computed at read time from stored dates —
+  `deriveSubscriptionStatus()`, the same "derive, don't pre-compute"
+  approach as `biosecurityScore()` — usage bars against the plan's
+  configurable limits, and self-service plan switching. **Enforcement is
+  UI-level only**: there is no hard RLS/DB block on writes past a limit or
+  while suspended in this pass — see "Deliberately deferred" below.
+- **M-Pesa** (spec §44): `src/lib/payments/mpesa.ts` implements the real
+  Daraja STK-push request/response shape end-to-end (auth, STK push,
+  callback parsing), gated behind `MPESA_*` env vars that are **unset in
+  this environment** — no sandbox credentials were available here, so it
+  returns a typed `not_configured` result rather than faking a payment,
+  exactly the "clean interface, documented integration point" spec §106
+  allows. `/api/mpesa/stk-push` (authenticated) and `/api/mpesa/callback`
+  (public, service-role — Safaricom has no session) are both implemented
+  but **untested against a live Safaricom sandbox**.
+- **SMS** (spec §48): `src/lib/sms/provider.ts` defines the spec's exact
+  interface (`sendSMS`/`sendBulkSMS`/`getBalance`/`getDeliveryStatus`) with
+  a real, working `ConsoleSmsProvider` default (logs to
+  `poultryedos_sms_logs`, no paid gateway needed) — swap in a real Kenyan
+  provider later without touching any caller.
+- **Notifications** (spec §47): a bell in the header (`/app/notifications`)
+  backed by `poultryedos_notifications`. Since there's no cron/background
+  worker, notifications are generated **lazily, once per page load** —
+  `ensureDueNotifications()` upserts whatever's currently due (vaccination
+  within 2 days, low/out-of-stock inventory, today's mortality alert,
+  subscription trial ending or past due), keyed by a `dedupe_key` so
+  repeated runs never spam duplicates.
+- **CMS** (spec §67, tenant-scoped): `/app/content` lets an owner/admin
+  create/edit their **own tenant's** advice articles (the seeded global
+  library stays read-only, exactly as RLS already enforced before this
+  phase — it just had no UI) and post announcements, which surface as a
+  small banner on the farmer home page. There is no cross-tenant
+  super-admin CMS — see "Deliberately deferred."
+- **Reports** (spec §59/60/85): `/app/reports` (owner/admin/farm_manager)
+  adds tenant-wide, date-ranged (7/30/90d) Production, Mortality, and
+  Financial summaries — the multi-flock rollup a network admin needs, on
+  top of the single-flock PDF/print already on `/app/flock/[id]`. Both PDF
+  (`downloadSimpleReportPdf`) and a new CSV export are available.
+- **Desktop layout**: the app shell was phone-width (`max-w-md`) at every
+  screen size regardless of role. Per spec §65 ("Desktop is the expanded
+  experience"), the admin/field variants now widen up to `max-w-5xl` above
+  phone width — Network's stat grid and the header/bottom-nav container
+  scale with it — and the farmer variant widens more modestly (`max-w-2xl`)
+  so a smallholder on a shared PC isn't stuck in a phone-narrow column
+  either, without turning "Record Today" into a stretched desktop form.
+  Every width is an upper bound, not a fixed size, so phone rendering is
+  unchanged.
+
 ### Who is the "main" farmer?
 
 Deliberately: there isn't one, and we didn't add a flag pretending there
@@ -252,11 +307,31 @@ mean very different amounts of engineering:
   marketplace listing/matching between farmers and buyers.
 - **Maps** (§37/61): field visits capture GPS coordinates, but there's no
   map view rendering farm/farmer locations or field officer routes yet.
-- **Phase 7 onward**: M-Pesa, SMS/USSD, subscriptions, the CMS/super-admin
-  area, and the full AI/ML engine (the one mortality alert implemented is
+- **Cross-tenant super admin** (spec §5/67): every RLS policy in this app
+  is scoped to "members of one tenant" — there is no platform-level role
+  that can see across every tenant. Phase 7's CMS, plan catalog, and
+  billing are all tenant-scoped (an owner/admin manages their *own*
+  tenant); a genuine super admin would need a new allowlist table, a
+  `poultryedos_is_super_admin()` check mirroring
+  `poultryedos_is_tenant_member()`, and new read policies added to every
+  tenant-scoped table — a deliberately bigger, separate change, confirmed
+  out of scope for this pass.
+- **Subscription/plan-limit enforcement is UI-level only**: usage bars and
+  upgrade prompts exist, but there is no hard RLS or trigger block that
+  actually prevents writes once a plan limit is exceeded or a subscription
+  is suspended. Building that touches the write policy of every
+  farmer/farm/flock/etc. table and was deliberately left for a pass that
+  can be live-verified end to end (this one couldn't — see "Database"
+  above on the Supabase MCP connection).
+- **M-Pesa is architecture-only, not live-tested**: no Safaricom sandbox
+  credentials exist in this environment (see the Platform section above).
+- **USSD, WhatsApp, real SMS delivery**: the SMS provider interface is
+  real and working end-to-end against a console/logging default; no actual
+  Kenyan SMS gateway, USSD short-code, or WhatsApp integration exists.
+- **The full AI/ML engine**: the one mortality alert implemented is
   explicitly Level-1 rule-based, per spec §51 — a same-flock
   trailing-average comparison, not a model, worded as "worth a closer
-  look" / "veterinary review recommended," never a diagnosis).
+  look" / "veterinary review recommended," never a diagnosis.
 - **Multi-line purchase orders**: each PO is one item from one supplier,
   which covers the real smallholder/early-commercial workflow (a bag of
   feed, a vial of vaccine). A multi-line PO system is real added
@@ -295,6 +370,14 @@ mean very different amounts of engineering:
   50), a stock-out and a negative adjustment (confirmed it correctly
   reached 38), a customer, a sale, and an expense — all inserted
   successfully under RLS, then cleaned up.
+- **Phase 7 migrations (`0017`–`0020`) and `seed.sql`'s new plan rows are
+  written but NOT applied or RLS-verified** — unlike every phase before it,
+  this session had no live Supabase MCP connection to the `edos_db`
+  project. Apply them and re-seed, then spot-check the same way every prior
+  phase was: confirm a non-member sees zero rows of another tenant's
+  `poultryedos_subscriptions`/`poultryedos_mpesa_transactions`/
+  `poultryedos_notifications`, and confirm the trial-subscription trigger
+  actually fires on a new tenant signup.
 - **Two more real bugs were caught this way, not left for you to find**:
   (1) `unique(tenant_id, code)` / `unique(tenant_id, name)` on the global
   reference tables (poultry types, expense categories) never actually

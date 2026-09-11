@@ -41,7 +41,7 @@ export function FlockDetail({
   const ageDays = Math.floor(
     (new Date().getTime() - new Date(flock.placement_date).getTime()) / (1000 * 60 * 60 * 24),
   );
-  const mortalityPct = ((flock.initial_quantity - flock.current_quantity) / flock.initial_quantity) * 100;
+  const mortalityPct = (finance.totalMortality / flock.initial_quantity) * 100;
   const placedLabel = new Date(flock.placement_date).toLocaleDateString("en-KE", {
     day: "numeric",
     month: "short",
@@ -151,7 +151,7 @@ export function FlockDetail({
           </div>
         </div>
 
-        <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
+        <div className="mt-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-3">
           <Detail label="Type" value={poultryTypeName ?? "—"} />
           <Detail label="Age" value={`${ageDays} days`} />
           <Detail label="Placed" value={placedLabel} />

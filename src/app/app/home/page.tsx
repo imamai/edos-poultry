@@ -1,7 +1,9 @@
 import Link from "next/link";
-import { Egg, Skull, Wheat, Wallet, TriangleAlert, Syringe } from "lucide-react";
-import { getMyFarmerContext, getRecentDailyRecords, getUpcomingVaccinations, computeMortalityAlert } from "@/lib/data/farmer";
+import { Egg, Skull, Wheat, Wallet, TriangleAlert, Syringe, Megaphone } from "lucide-react";
+import { getMyFarmerContext, getRecentDailyRecords, getUpcomingVaccinations, computeMortalityAlert, resolveSelectedFlock } from "@/lib/data/farmer";
+import { getAnnouncements, activeAnnouncements } from "@/lib/data/cms";
 import { formatMoney } from "@/lib/money";
+import { FlockSwitcher } from "@/components/app/flock-switcher";
 
 function greeting(hour: number) {
   if (hour < 12) return "Good morning";
@@ -9,16 +11,23 @@ function greeting(hour: number) {
   return "Good evening";
 }
 
-export default async function FarmerHomePage() {
+export default async function FarmerHomePage({
+  searchParams,
+}: {
+  searchParams: Promise<{ flock?: string }>;
+}) {
   const context = await getMyFarmerContext();
   if (!context) return null;
-  const { farmer, flock, tenant } = context;
+  const { farmer, tenant } = context;
+  const { flock: requestedFlockId } = await searchParams;
 
   const hour = Number(
     new Intl.DateTimeFormat("en-KE", { hour: "numeric", hour12: false, timeZone: tenant.timezone }).format(
       new Date(),
     ),
   );
+
+  const { flock, allFlocks } = await resolveSelectedFlock(context.farm.id, requestedFlockId);
 
   if (!flock) {
     return (
@@ -30,9 +39,11 @@ export default async function FarmerHomePage() {
   }
 
   const records = await getRecentDailyRecords(flock.id, 8);
-  const [today] = records;
+  const todayDate = new Date().toISOString().slice(0, 10);
+  const today = records[0]?.record_date === todayDate ? records[0] : undefined;
   const vaccinations = await getUpcomingVaccinations(flock.id);
-  const alert = computeMortalityAlert(records);
+  const alert = today ? computeMortalityAlert(records) : null;
+  const announcements = activeAnnouncements(await getAnnouncements(tenant.id));
 
   const todayEggs = today?.eggs_collected ?? null;
   const todaySales = today?.sales_amount_cents ?? 0;
@@ -46,6 +57,18 @@ export default async function FarmerHomePage() {
         <h1 className="font-display text-2xl font-medium text-ink">{farmer.full_name.split(" ")[0]}</h1>
       </div>
 
+      <FlockSwitcher flocks={allFlocks} selectedId={flock.id} />
+
+      {announcements[0] && (
+        <div className="flex items-start gap-3 rounded-xl border border-line bg-accent-soft p-4">
+          <Megaphone className="mt-0.5 h-5 w-5 shrink-0 text-accent-dark" />
+          <div>
+            <p className="text-sm font-medium text-ink">{announcements[0].title}</p>
+            <p className="mt-0.5 text-sm text-ink-soft">{announcements[0].body}</p>
+          </div>
+        </div>
+      )}
+
       {alert && (
         <div className="flex items-start gap-3 rounded-xl border border-danger bg-danger-soft p-4">
           <TriangleAlert className="mt-0.5 h-5 w-5 shrink-0 text-danger" />
@@ -54,8 +77,10 @@ export default async function FarmerHomePage() {
       )}
 
       <div>
-        <p className="text-sm font-medium text-ink-soft">Your farm today</p>
-        <div className="mt-2 grid grid-cols-2 gap-3">
+        <p className="text-sm font-medium text-ink-soft">
+          {allFlocks.length > 1 ? `${flock.batch_code} today` : "Your farm today"}
+        </p>
+        <div className="mt-2 grid grid-cols-2 gap-3 md:grid-cols-4">
           <StatCard icon={<Skull className="h-5 w-5 text-danger" />} label="Birds alive" value={String(flock.current_quantity)} />
           <StatCard icon={<Egg className="h-5 w-5 text-accent-dark" />} label="Eggs today" value={todayEggs === null ? "—" : String(todayEggs)} />
           <StatCard icon={<Wheat className="h-5 w-5 text-primary" />} label="Feed used" value={todayFeed === null ? "—" : `${todayFeed} kg`} />
@@ -64,7 +89,7 @@ export default async function FarmerHomePage() {
         {!today && (
           <p className="mt-2 text-xs text-ink-faint">
             You haven&apos;t recorded today yet.{" "}
-            <Link href="/app/record" className="text-primary hover:underline">
+            <Link href={`/app/record?flock=${flock.id}`} className="text-primary hover:underline">
               Record today&apos;s numbers →
             </Link>
           </p>
@@ -90,7 +115,7 @@ export default async function FarmerHomePage() {
       )}
 
       <Link
-        href="/app/record"
+        href={`/app/record?flock=${flock.id}`}
         className="block rounded-full bg-primary px-6 py-3.5 text-center text-sm font-medium text-white shadow-card hover:bg-primary-dark"
       >
         Record today&apos;s numbers

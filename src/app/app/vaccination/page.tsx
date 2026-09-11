@@ -1,14 +1,34 @@
-import { getMyFarmerContext } from "@/lib/data/farmer";
+import Link from "next/link";
+import { getMyFarmerContext, resolveSelectedFlock } from "@/lib/data/farmer";
 import { createClient } from "@/lib/supabase/server";
 import { VaccinationManager } from "@/components/app/vaccination-manager";
+import { FlockSwitcher } from "@/components/app/flock-switcher";
 import type { VaccinationSchedule } from "@/lib/database.types";
 
-export default async function VaccinationPage() {
+export default async function VaccinationPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ flock?: string }>;
+}) {
   const context = await getMyFarmerContext();
-  if (!context?.flock) {
+  const { flock: requestedFlockId } = await searchParams;
+  if (!context) {
     return (
       <div className="rounded-2xl border border-dashed border-line-strong p-8 text-center text-ink-soft">
         No active flock yet.
+      </div>
+    );
+  }
+
+  const { flock, allFlocks } = await resolveSelectedFlock(context.farm.id, requestedFlockId);
+  if (!flock) {
+    return (
+      <div className="rounded-2xl border border-dashed border-line-strong p-8 text-center text-ink-soft">
+        No active flock yet.
+        <br />
+        <Link href="/app/flock/new" className="mt-2 inline-block text-primary hover:underline">
+          Add a flock →
+        </Link>
       </div>
     );
   }
@@ -17,15 +37,19 @@ export default async function VaccinationPage() {
   const { data } = await supabase
     .from("poultryedos_vaccination_schedules")
     .select("*")
-    .eq("flock_id", context.flock.id)
-    .order("scheduled_date", { ascending: false });
+    .eq("flock_id", flock.id)
+    .order("scheduled_date", { ascending: true });
 
   return (
-    <VaccinationManager
-      tenantId={context.tenant.id}
-      flockId={context.flock.id}
-      placementDate={context.flock.placement_date}
-      schedules={(data ?? []) as VaccinationSchedule[]}
-    />
+    <div>
+      <FlockSwitcher flocks={allFlocks} selectedId={flock.id} />
+      <VaccinationManager
+        key={flock.id}
+        tenantId={context.tenant.id}
+        flockId={flock.id}
+        placementDate={flock.placement_date}
+        schedules={(data ?? []) as VaccinationSchedule[]}
+      />
+    </div>
   );
 }

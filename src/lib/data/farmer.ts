@@ -122,6 +122,34 @@ export async function getAllFlocks(farmId: string): Promise<Flock[]> {
   return (data ?? []) as Flock[];
 }
 
+/**
+ * Picks which flock a flock-scoped page (Record Today, Health, Vaccination,
+ * Medications, Finance) should act on. Previously every one of those pages
+ * silently defaulted to "most recently placed active flock" with no way to
+ * pick a different one — a real problem the moment a farm has more than one
+ * batch going at once. Now: honor an explicit `?flock=` query param if it
+ * names a flock that actually belongs to this farm, otherwise fall back to
+ * the old default so single-flock farms see no change at all.
+ */
+export async function resolveSelectedFlock(
+  farmId: string,
+  requestedFlockId?: string,
+): Promise<{ flock: Flock | null; allFlocks: Flock[] }> {
+  const allFlocks = await getAllFlocks(farmId);
+
+  if (requestedFlockId) {
+    const requested = allFlocks.find((f) => f.id === requestedFlockId);
+    if (requested) return { flock: requested, allFlocks };
+  }
+
+  const defaultFlock =
+    allFlocks
+      .filter((f) => f.status === "active")
+      .sort((a, b) => (a.placement_date < b.placement_date ? 1 : -1))[0] ?? null;
+
+  return { flock: defaultFlock, allFlocks };
+}
+
 export async function getRecentDailyRecords(flockId: string, limit = 14): Promise<DailyRecord[]> {
   const supabase = await createClient();
   const { data, error } = await supabase

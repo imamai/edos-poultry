@@ -381,3 +381,120 @@ export interface FieldTask {
   status: "open" | "done";
   created_at: string;
 }
+
+// Phase 7: Platform (subscriptions, M-Pesa, SMS, notifications, CMS) -------
+
+export type PlanLimits = Partial<
+  Record<"farmers" | "farms" | "houses" | "flocks" | "users" | "field_officers", number>
+>;
+
+export interface SubscriptionPlan {
+  id: string;
+  code: string;
+  name: string;
+  price_cents: number;
+  billing_interval: "monthly" | "annual";
+  limits: PlanLimits;
+  is_active: boolean;
+  sort_order: number;
+}
+
+/** Stored/base status only. The *effective* status shown to users
+ * (trial/active/grace_period/past_due/suspended/expired) is computed by
+ * deriveSubscriptionStatus() in src/lib/data/subscriptions.ts from the
+ * dates below — there is no cron job flipping this column on a timer. */
+export type SubscriptionBaseStatus = "trial" | "active" | "cancelled";
+export type EffectiveSubscriptionStatus =
+  | "trial"
+  | "active"
+  | "grace_period"
+  | "past_due"
+  | "suspended"
+  | "expired"
+  | "cancelled";
+
+export interface Subscription {
+  id: string;
+  tenant_id: string;
+  plan_id: string;
+  status: SubscriptionBaseStatus;
+  trial_ends_at: string | null;
+  current_period_start: string;
+  current_period_end: string | null;
+  cancel_at_period_end: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export type MpesaTransactionStatus = "initiated" | "pending" | "success" | "failed" | "cancelled";
+
+export interface MpesaTransaction {
+  id: string;
+  tenant_id: string;
+  subscription_id: string | null;
+  phone: string;
+  amount_cents: number;
+  status: MpesaTransactionStatus;
+  checkout_request_id: string | null;
+  merchant_request_id: string | null;
+  mpesa_receipt_number: string | null;
+  result_desc: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type NotificationType =
+  | "vaccination_due"
+  | "low_stock"
+  | "mortality_alert"
+  | "subscription"
+  | "support_ticket"
+  | "task_assigned"
+  | "general";
+
+export interface Notification {
+  id: string;
+  tenant_id: string;
+  user_id: string;
+  type: NotificationType;
+  title: string;
+  body: string;
+  link: string | null;
+  dedupe_key: string | null;
+  read_at: string | null;
+  created_at: string;
+}
+
+export interface NotificationPreferences {
+  user_id: string;
+  vaccination_due: boolean;
+  low_stock: boolean;
+  mortality_alert: boolean;
+  subscription: boolean;
+  support_ticket: boolean;
+  task_assigned: boolean;
+}
+
+export type SmsStatus = "queued" | "sent" | "delivered" | "failed";
+
+export interface SmsLog {
+  id: string;
+  tenant_id: string;
+  to_phone: string;
+  message: string;
+  provider: string;
+  provider_message_id: string | null;
+  status: SmsStatus;
+  error: string | null;
+  created_at: string;
+}
+
+export interface Announcement {
+  id: string;
+  tenant_id: string | null;
+  title: string;
+  body: string;
+  starts_at: string;
+  ends_at: string | null;
+  created_at: string;
+}

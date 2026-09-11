@@ -46,6 +46,13 @@ export function TeamManager({
     router.refresh();
   }
 
+  async function copyLink(farmerId: string, token: string) {
+    const link = `${window.location.origin}/invite/${token}`;
+    await navigator.clipboard.writeText(link).catch(() => {});
+    setCopiedId(farmerId);
+    setTimeout(() => setCopiedId(null), 3000);
+  }
+
   async function inviteFarmer(farmerId: string, email: string) {
     const supabase = createClient();
     const { data, error } = await supabase
@@ -54,10 +61,7 @@ export function TeamManager({
       .select("token")
       .single();
     if (error || !data) return;
-    const link = `${window.location.origin}/invite/${(data as { token: string }).token}`;
-    await navigator.clipboard.writeText(link).catch(() => {});
-    setCopiedId(farmerId);
-    setTimeout(() => setCopiedId(null), 3000);
+    await copyLink(farmerId, (data as { token: string }).token);
     router.refresh();
   }
 
@@ -125,7 +129,7 @@ export function TeamManager({
                   pendingInvite ? (
                     <button
                       type="button"
-                      onClick={() => inviteFarmer(f.id, pendingInvite.email)}
+                      onClick={() => copyLink(f.id, pendingInvite.token)}
                       className="rounded-full border border-line-strong px-3 py-1.5 text-xs text-ink-soft hover:border-primary"
                     >
                       {copiedId === f.id ? "Link copied!" : "Copy invite link again"}
