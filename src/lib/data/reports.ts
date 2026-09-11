@@ -6,7 +6,7 @@ export interface ReportRange {
   label: string;
 }
 
-export function lastNDaysRange(days: 7 | 30 | 90): ReportRange {
+export function lastNDaysRange(days: number): ReportRange {
   const to = new Date();
   const from = new Date(to.getTime() - (days - 1) * 24 * 60 * 60 * 1000);
   return {

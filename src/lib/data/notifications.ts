@@ -2,6 +2,7 @@ import { createClient } from "@/lib/supabase/server";
 import type { FarmerContext, MembershipContext } from "@/lib/data/farmer";
 import { getRecentDailyRecords, computeMortalityAlert } from "@/lib/data/farmer";
 import { getTenantSubscription, deriveSubscriptionStatus } from "@/lib/data/subscriptions";
+import { predictFeedStockout, predictProductionTrend } from "@/lib/ai/predictions";
 import type { Notification } from "@/lib/database.types";
 
 export async function getNotifications(userId: string, limit = 30): Promise<Notification[]> {
@@ -87,7 +88,7 @@ export async function ensureDueNotifications(
         });
       }
 
-      const records = await getRecentDailyRecords(flock.id, 8);
+      const records = await getRecentDailyRecords(flock.id, 21);
       const mortalityAlert = records[0]?.record_date === today ? computeMortalityAlert(records) : null;
       if (mortalityAlert) {
         drafts.push({
@@ -96,6 +97,20 @@ export async function ensureDueNotifications(
           body: mortalityAlert.message,
           link: `/app/home?flock=${flock.id}`,
           dedupeKey: `mortality_alert:${flock.id}:${today}`,
+        });
+      }
+
+      const trend = predictProductionTrend(records);
+      if (trend.status === "ok" && trend.value.direction === "down") {
+        drafts.push({
+          type: "production_decline",
+          title: `Egg production declining — ${flock.batch_code}`,
+          body: trend.explanation,
+          link: `/app/flock/${flock.id}`,
+          // Re-derive weekly rather than daily — a trend doesn't meaningfully
+          // change day to day, and re-notifying every single day would be
+          // noise rather than a fresh signal.
+          dedupeKey: `production_decline:${flock.id}:${weekOf(today)}`,
         });
       }
     }
@@ -109,14 +124,47 @@ export async function ensureDueNotifications(
         .eq("is_active", true)
         .not("reorder_level", "is", null);
 
+      const alreadyLowStockIds = new Set<string>();
       for (const item of lowStockItems ?? []) {
         if (item.reorder_level != null && item.stock_on_hand <= item.reorder_level) {
+          alreadyLowStockIds.add(item.id);
           drafts.push({
             type: "low_stock",
             title: `${item.name} running low`,
             body: `${item.stock_on_hand} ${item.unit} left, at or below the reorder level of ${item.reorder_level} ${item.unit}.`,
             link: "/app/inventory",
             dedupeKey: `low_stock:${item.id}:${today}`,
+          });
+        }
+      }
+
+      // Trend-based early warning, on top of the static reorder-level check
+      // above: an item can be projected to run out soon even while still
+      // above its reorder level, if usage has picked up. Skip items already
+      // covered by low_stock so the two alerts don't overlap.
+      const { data: allActiveItems } = await supabase
+        .from("poultryedos_inventory_items")
+        .select("id, name, unit, stock_on_hand")
+        .eq("tenant_id", membership.tenant.id)
+        .eq("is_active", true);
+
+      for (const item of allActiveItems ?? []) {
+        if (alreadyLowStockIds.has(item.id)) continue;
+        const { data: recentOut } = await supabase
+          .from("poultryedos_inventory_transactions")
+          .select("quantity, transaction_date")
+          .eq("item_id", item.id)
+          .eq("transaction_type", "out")
+          .gte("transaction_date", addDays(today, -14));
+
+        const prediction = predictFeedStockout(item, recentOut ?? []);
+        if (prediction.status === "ok" && prediction.value.daysRemaining <= 7) {
+          drafts.push({
+            type: "feed_stockout",
+            title: `${item.name} may run out soon`,
+            body: prediction.explanation,
+            link: "/app/inventory",
+            dedupeKey: `feed_stockout:${item.id}:${today}`,
           });
         }
       }
@@ -173,4 +221,13 @@ function addDays(dateKey: string, days: number): string {
   const d = new Date(`${dateKey}T00:00:00Z`);
   d.setUTCDate(d.getUTCDate() + days);
   return d.toISOString().slice(0, 10);
+}
+
+/** ISO-ish week key (year + week number) used only to dedupe a trend alert
+ * at "once a week" granularity rather than every page load. */
+function weekOf(dateKey: string): string {
+  const d = new Date(`${dateKey}T00:00:00Z`);
+  const firstDayOfYear = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  const weekNumber = Math.ceil(((d.getTime() - firstDayOfYear.getTime()) / 86400000 + firstDayOfYear.getUTCDay() + 1) / 7);
+  return `${d.getUTCFullYear()}-W${weekNumber}`;
 }

@@ -3,6 +3,7 @@ import { getMyMembership, getFlockById, getRecentDailyRecords } from "@/lib/data
 import { getFlockFinance } from "@/lib/data/business";
 import { createClient } from "@/lib/supabase/server";
 import { computeFeedEfficiency } from "@/lib/feed-efficiency";
+import { predictProductionTrend } from "@/lib/ai/predictions";
 import { FlockDetail } from "@/components/app/flock-detail";
 
 export default async function FlockDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -22,6 +23,7 @@ export default async function FlockDetailPage({ params }: { params: Promise<{ id
   const records = await getRecentDailyRecords(flock.id, 60);
   const feedEfficiency = computeFeedEfficiency(records, flock.current_quantity);
   const finance = await getFlockFinance(flock.id);
+  const productionTrend = predictProductionTrend(records);
 
   return (
     <FlockDetail
@@ -33,6 +35,7 @@ export default async function FlockDetailPage({ params }: { params: Promise<{ id
       feedEfficiency={feedEfficiency}
       finance={finance}
       currency={membership.tenant.currency}
+      productionTrend={productionTrend}
     />
   );
 }

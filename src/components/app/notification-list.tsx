@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { Syringe, Boxes, TriangleAlert, CreditCard, LifeBuoy, ListChecks, Bell } from "lucide-react";
+import { Syringe, Boxes, TriangleAlert, CreditCard, LifeBuoy, ListChecks, Bell, TrendingDown, PackageX } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import type { Notification, NotificationType } from "@/lib/database.types";
 
@@ -15,6 +15,8 @@ const ICONS: Record<NotificationType, typeof Bell> = {
   support_ticket: LifeBuoy,
   task_assigned: ListChecks,
   general: Bell,
+  production_decline: TrendingDown,
+  feed_stockout: PackageX,
 };
 
 export function NotificationList({ notifications }: { notifications: Notification[] }) {

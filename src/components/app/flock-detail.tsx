@@ -7,6 +7,7 @@ import { createClient } from "@/lib/supabase/client";
 import type { DailyRecord, Flock } from "@/lib/database.types";
 import type { FeedEfficiency } from "@/lib/feed-efficiency";
 import type { FlockFinance } from "@/lib/data/business";
+import type { PredictionResult, ProductionTrendPrediction } from "@/lib/ai/predictions";
 import { formatMoney } from "@/lib/money";
 import { PrintHeader, PrintSection, PrintRow } from "@/components/app/print-report";
 import { downloadSimpleReportPdf } from "@/lib/pdf/simple-report";
@@ -20,6 +21,7 @@ export function FlockDetail({
   feedEfficiency,
   finance,
   currency,
+  productionTrend,
 }: {
   flock: Flock;
   poultryTypeName: string | null;
@@ -29,6 +31,7 @@ export function FlockDetail({
   feedEfficiency: FeedEfficiency;
   finance: FlockFinance;
   currency: string;
+  productionTrend: PredictionResult<ProductionTrendPrediction>;
 }) {
   const router = useRouter();
   const [editing, setEditing] = useState(false);
@@ -220,6 +223,21 @@ export function FlockDetail({
               value={feedEfficiency.feedPerDozenEggsKg != null ? `${feedEfficiency.feedPerDozenEggsKg.toFixed(2)} kg` : null}
             />
           </dl>
+        </div>
+
+        <div className="mt-4 rounded-xl border border-line bg-paper-raised p-4">
+          <p className="text-sm font-medium text-ink-soft">Egg production forecast</p>
+          {productionTrend.status === "ok" ? (
+            <>
+              <p className="mt-2 text-sm text-ink">{productionTrend.explanation}</p>
+              <p className="mt-2 text-xs text-ink-faint">
+                Projected next 7 days: ~{productionTrend.value.next7DayProjection} eggs · Confidence: {productionTrend.confidence}% ·
+                Based on {productionTrend.dataUsed}
+              </p>
+            </>
+          ) : (
+            <p className="mt-2 text-sm text-ink-faint">{productionTrend.explanation}</p>
+          )}
         </div>
 
         <h2 className="mt-6 text-sm font-medium text-ink-soft">Recent records</h2>

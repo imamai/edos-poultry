@@ -1,7 +1,8 @@
 import Link from "next/link";
-import { Egg, Skull, Wheat, Wallet, TriangleAlert, Syringe, Megaphone } from "lucide-react";
-import { getMyFarmerContext, getRecentDailyRecords, getUpcomingVaccinations, computeMortalityAlert, resolveSelectedFlock } from "@/lib/data/farmer";
+import { Egg, Skull, Wheat, Wallet, TriangleAlert, Syringe, Megaphone, Sparkles } from "lucide-react";
+import { getMyMembership, getMyFarmerContext, getRecentDailyRecords, getUpcomingVaccinations, computeMortalityAlert, resolveSelectedFlock } from "@/lib/data/farmer";
 import { getAnnouncements, activeAnnouncements } from "@/lib/data/cms";
+import { getUnreadNotificationCount } from "@/lib/data/notifications";
 import { formatMoney } from "@/lib/money";
 import { getDictionary } from "@/lib/i18n/translations";
 import { FlockSwitcher } from "@/components/app/flock-switcher";
@@ -42,6 +43,8 @@ export default async function FarmerHomePage({
   const vaccinations = await getUpcomingVaccinations(flock.id);
   const alert = today ? computeMortalityAlert(records) : null;
   const announcements = activeAnnouncements(await getAnnouncements(tenant.id));
+  const membership = await getMyMembership();
+  const unreadCount = membership ? await getUnreadNotificationCount(membership.userId) : 0;
 
   const todayEggs = today?.eggs_collected ?? null;
   const todaySales = today?.sales_amount_cents ?? 0;
@@ -59,6 +62,18 @@ export default async function FarmerHomePage({
       </div>
 
       <FlockSwitcher flocks={allFlocks} selectedId={flock.id} />
+
+      {unreadCount > 0 && (
+        <Link
+          href="/app/decisions"
+          className="flex items-center gap-3 rounded-xl border border-accent-dark/30 bg-accent-soft p-4 hover:border-accent-dark"
+        >
+          <Sparkles className="h-5 w-5 shrink-0 text-accent-dark" />
+          <span className="flex-1 text-sm font-medium text-ink">
+            {unreadCount} thing{unreadCount === 1 ? "" : "s"} need{unreadCount === 1 ? "s" : ""} your attention →
+          </span>
+        </Link>
+      )}
 
       {announcements[0] && (
         <div className="flex items-start gap-3 rounded-xl border border-line bg-accent-soft p-4">

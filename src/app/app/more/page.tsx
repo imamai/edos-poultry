@@ -12,10 +12,17 @@ import {
   CreditCard,
   FileText,
   FileBarChart,
+  Sparkles,
+  Bot,
 } from "lucide-react";
 import { getMyMembership, getMyFarmerContext } from "@/lib/data/farmer";
 
 type MoreItem = { href: string; label: string; desc: string; icon: typeof HeartPulse };
+
+const INTELLIGENCE_ITEMS: MoreItem[] = [
+  { href: "/app/decisions", label: "What needs my attention?", desc: "Alerts grouped by priority", icon: Sparkles },
+  { href: "/app/assistant", label: "Ask about your farm", desc: "Answers grounded in your own data", icon: Bot },
+];
 
 const FARMER_ITEMS: MoreItem[] = [
   { href: "/app/health", label: "Health", desc: "Symptoms, treatment, vet visits", icon: HeartPulse },
@@ -34,7 +41,7 @@ export default async function MorePage() {
   const farmerContext = await getMyFarmerContext();
   const isOwnerOrAdmin = membership.role === "owner" || membership.role === "admin";
 
-  const items: MoreItem[] = [];
+  const items: MoreItem[] = [...INTELLIGENCE_ITEMS];
   if (farmerContext) items.push(...FARMER_ITEMS);
   if (isOwnerOrAdmin) {
     items.push({ href: "/app/billing", label: "Billing", desc: "Plan, usage, and payments", icon: CreditCard });

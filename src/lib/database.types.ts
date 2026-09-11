@@ -462,7 +462,9 @@ export type NotificationType =
   | "subscription"
   | "support_ticket"
   | "task_assigned"
-  | "general";
+  | "general"
+  | "production_decline"
+  | "feed_stockout";
 
 export interface Notification {
   id: string;

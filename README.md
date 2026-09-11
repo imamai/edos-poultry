@@ -291,6 +291,51 @@ now a header (supplier, status, dates) with line items in a new
   button per order; the order list shows every line and the
   trigger-computed total.
 
+### AI/ML engine (spec §49-55)
+
+Levels 1-3 only (rule-based → historical-trend comparison → simple
+statistical forecasting) — spec §51 explicitly prefers "not enough data
+yet" over fabricated intelligence, and there's no cross-tenant historical
+dataset or training pipeline to build real Level 4/5 machine learning on.
+See "Deliberately deferred" below for exactly what that rules out.
+
+- **Predictions** (`src/lib/ai/predictions.ts`, pure functions, same
+  "derive at read time" shape as `biosecurityScore()`): egg production
+  trend (recent-vs-prior 7-day comparison + a naive next-7-day
+  projection) and feed stock-out (days remaining from a recent
+  consumption rate). Every result carries the spec §52 fields — value,
+  confidence, what data was used, plain-language explanation — or an
+  explicit `insufficient_data` status with why, never a guess dressed up
+  as one.
+- **Decision Center** (`/app/decisions`, spec §53 — "what needs my
+  attention?"): a *view* over the existing `poultryedos_notifications`
+  table, not a new subsystem — the same alerts already in the header bell
+  are grouped into HIGH / ATTENTION / MONITOR / OPPORTUNITY, each with the
+  spec's "why does it matter / what to check / what to do" framing.
+  `ensureDueNotifications()` gained two new checks (production decline,
+  feed stock-out) alongside its existing five.
+- **Flock forecasts**: `/app/flock/[id]` shows the egg-production
+  forecast next to the existing feed-efficiency numbers.
+- **AI Assistant** (`/app/assistant`, spec §54): the spec's own example
+  questions ("Which flock is most profitable?", "Why did egg production
+  decline?", "What are my biggest expenses?", etc.) as tappable buttons,
+  each answered by a real deterministic calculation over the tenant's own
+  data — no language model involved in producing a single number. A
+  free-text box only appears if `ANTHROPIC_API_KEY` is configured (same
+  "architecture-only, typed not-configured fallback" as M-Pesa/SMS); when
+  present, Claude only *phrases* the same deterministic facts every canned
+  question already computes — it never gets raw table access and is
+  explicitly instructed not to diagnose or prescribe.
+- Live-verified: the production-trend and feed-stockout math were checked
+  against known inputs (a 150-vs-200-egg week produces exactly -25%/"down";
+  a 5kg/day rate against 25kg stock produces exactly 5 days remaining), a
+  synthetic test tenant's declining flock and depleting feed item correctly
+  generated both new notification types with the widened
+  `poultryedos_notifications` type constraint (migration `0025`), and an
+  unrelated user saw zero of them. No new security-advisor findings (no
+  new functions with grant issues — the only schema change was the
+  constraint). Test data and the throwaway auth user deleted afterward.
+
 ### Who is the "main" farmer?
 
 Deliberately: there isn't one, and we didn't add a flag pretending there
@@ -407,10 +452,18 @@ mean very different amounts of engineering:
 - **USSD, WhatsApp, real SMS delivery**: the SMS provider interface is
   real and working end-to-end against a console/logging default; no actual
   Kenyan SMS gateway, USSD short-code, or WhatsApp integration exists.
-- **The full AI/ML engine**: the one mortality alert implemented is
-  explicitly Level-1 rule-based, per spec §51 — a same-flock
-  trailing-average comparison, not a model, worded as "worth a closer
-  look" / "veterinary review recommended," never a diagnosis.
+- **Real machine learning (Level 4/5)**: there is no cross-tenant
+  historical dataset and no training pipeline, and there's no realistic
+  way to build genuine ML in this environment — attempting it would mean
+  fabricating exactly what spec §51 forbids. See "AI/ML engine" below for
+  what Levels 1-3 actually cover instead.
+- **Broiler weight/FCR trajectory prediction**: no weight-capture UI or
+  table exists anywhere in the app yet — a prerequisite data-collection
+  gap, not an AI limitation.
+- **Demand-forecasting "opportunity" signals**: the Decision Center's
+  §53 example ("buyer demand increased this week") needs external market
+  data this app has no source for; only the tenant's own sales/profit
+  trend is used, and only when it's genuinely a signal, not fabricated.
 - **Real brand icon assets**: `public/icon.svg` is a placeholder mark, not
   real EDOS Poultry360 branding.
 
