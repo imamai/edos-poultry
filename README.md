@@ -559,6 +559,18 @@ both places by switching `step` to `"any"`, which keeps the `min=0.01`
 floor but drops the step-multiple requirement — this is exactly the kind
 of thing manual click-through catches that static analysis can't.
 
+**A second real bug turned up the same way**, from a screenshot of an
+actual downloaded invoice: the line-item table's columns didn't line up
+with their own headers — a long quantity string like "5.01 trays" had
+widened that column unpredictably, since `downloadSaleDocumentPdf`'s
+`autoTable` call had no explicit column widths and fell back to sizing
+each column purely from its own content length. Fixed with fixed,
+explicit widths (summing exactly to the printable page width) instead of
+content-based auto-sizing, plus `overflow: "ellipsize"` so an unusually
+long description truncates instead of wrapping and desyncing row
+heights. One shared function backs every quotation/invoice/receipt, so
+the fix applies to all three document types at once.
+
 ## Real-world requirements audit
 
 A stakeholder (Naomi) sent a plain-language list of what a Brooding record,
