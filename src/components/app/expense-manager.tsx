@@ -3,29 +3,34 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
-import type { Expense, ExpenseCategory } from "@/lib/database.types";
+import type { Expense, ExpenseCategory, Flock } from "@/lib/database.types";
 import { formatMoney } from "@/lib/money";
+import { BatchReassign } from "@/components/app/batch-reassign";
 
 export function ExpenseManager({
   tenantId,
-  flockId,
+  flocks,
+  defaultFlockId,
   currency,
   categories,
   expenses,
 }: {
   tenantId: string;
-  flockId: string | null;
+  flocks: Flock[];
+  defaultFlockId: string | null;
   currency: string;
   categories: ExpenseCategory[];
-  expenses: (Expense & { poultryedos_expense_categories: { name: string } | null })[];
+  expenses: (Expense & { poultryedos_expense_categories: { name: string } | null; poultryedos_flocks: { batch_code: string } | null })[];
 }) {
   const router = useRouter();
   const [adding, setAdding] = useState(false);
   const [categoryId, setCategoryId] = useState(categories[0]?.id ?? "");
+  const [flockId, setFlockId] = useState(defaultFlockId ?? "");
   const [amount, setAmount] = useState("");
   const [description, setDescription] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [editingBatchFor, setEditingBatchFor] = useState<string | null>(null);
 
   const total = expenses.reduce((sum, e) => sum + e.amount_cents, 0);
 
@@ -36,7 +41,7 @@ export function ExpenseManager({
     const supabase = createClient();
     const { error } = await supabase.from("poultryedos_expenses").insert({
       tenant_id: tenantId,
-      flock_id: flockId,
+      flock_id: flockId || null,
       category_id: categoryId || null,
       amount_cents: Math.round(Number(amount) * 100),
       description: description || null,
@@ -74,6 +79,23 @@ export function ExpenseManager({
 
       {adding && (
         <form onSubmit={handleSubmit} className="mt-4 space-y-4 rounded-xl border border-line bg-paper-raised p-4">
+          {flocks.length > 0 && (
+            <div>
+              <label className="text-sm font-medium text-ink-soft">Batch</label>
+              <select
+                value={flockId}
+                onChange={(e) => setFlockId(e.target.value)}
+                className="mt-1 w-full rounded-lg border border-line-strong px-3 py-2 text-sm outline-none focus:border-primary"
+              >
+                <option value="">General (not batch-specific)</option>
+                {flocks.map((f) => (
+                  <option key={f.id} value={f.id}>
+                    {f.batch_code} {f.status !== "active" ? `(${f.status.replace("_", " ")})` : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           <div>
             <label className="text-sm font-medium text-ink-soft">Category</label>
             <select
@@ -135,15 +157,44 @@ export function ExpenseManager({
           </p>
         )}
         {expenses.map((e) => (
-          <div key={e.id} className="flex items-center justify-between rounded-xl border border-line bg-paper-raised px-4 py-3 text-sm">
-            <div>
-              <p className="font-medium text-ink">{e.poultryedos_expense_categories?.name ?? "Uncategorized"}</p>
-              <p className="text-xs text-ink-faint">
-                {new Date(e.expense_date).toLocaleDateString("en-KE", { day: "numeric", month: "short" })}
-                {e.description && ` · ${e.description}`}
-              </p>
+          <div key={e.id} className="rounded-xl border border-line bg-paper-raised px-4 py-3 text-sm">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium text-ink">{e.poultryedos_expense_categories?.name ?? "Uncategorized"}</p>
+                <p className="text-xs text-ink-faint">
+                  {new Date(e.expense_date).toLocaleDateString("en-KE", { day: "numeric", month: "short" })}
+                  {" · "}
+                  {e.poultryedos_flocks?.batch_code ?? "General"}
+                  {flocks.length > 0 && (
+                    <>
+                      {" "}
+                      <button
+                        type="button"
+                        onClick={() => setEditingBatchFor(editingBatchFor === e.id ? null : e.id)}
+                        className="text-primary hover:underline"
+                      >
+                        (change)
+                      </button>
+                    </>
+                  )}
+                  {e.description && ` · ${e.description}`}
+                </p>
+              </div>
+              <span className="font-medium text-ink">{formatMoney(e.amount_cents, currency)}</span>
             </div>
-            <span className="font-medium text-ink">{formatMoney(e.amount_cents, currency)}</span>
+            {editingBatchFor === e.id && (
+              <BatchReassign
+                currentFlockId={e.flock_id}
+                flocks={flocks}
+                onSave={async (newFlockId) => {
+                  const supabase = createClient();
+                  await supabase.from("poultryedos_expenses").update({ flock_id: newFlockId }).eq("id", e.id);
+                  setEditingBatchFor(null);
+                  router.refresh();
+                }}
+                onCancel={() => setEditingBatchFor(null)}
+              />
+            )}
           </div>
         ))}
       </div>

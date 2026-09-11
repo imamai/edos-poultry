@@ -27,16 +27,19 @@ export async function getExpenseCategories(tenantId: string): Promise<ExpenseCat
 export async function getRecentExpenses(
   tenantId: string,
   limit = 30,
-): Promise<(Expense & { poultryedos_expense_categories: { name: string } | null })[]> {
+): Promise<(Expense & { poultryedos_expense_categories: { name: string } | null; poultryedos_flocks: { batch_code: string } | null })[]> {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("poultryedos_expenses")
-    .select("*, poultryedos_expense_categories(name)")
+    .select("*, poultryedos_expense_categories(name), poultryedos_flocks(batch_code)")
     .eq("tenant_id", tenantId)
     .order("expense_date", { ascending: false })
     .limit(limit);
   if (error) throw error;
-  return (data ?? []) as unknown as (Expense & { poultryedos_expense_categories: { name: string } | null })[];
+  return (data ?? []) as unknown as (Expense & {
+    poultryedos_expense_categories: { name: string } | null;
+    poultryedos_flocks: { batch_code: string } | null;
+  })[];
 }
 
 export async function getCustomers(tenantId: string): Promise<Customer[]> {
@@ -54,17 +57,18 @@ export async function getCustomers(tenantId: string): Promise<Customer[]> {
 export async function getRecentSales(
   tenantId: string,
   limit = 30,
-): Promise<(Sale & { poultryedos_customers: { name: string; phone: string | null } | null })[]> {
+): Promise<(Sale & { poultryedos_customers: { name: string; phone: string | null } | null; poultryedos_flocks: { batch_code: string } | null })[]> {
   const supabase = await createClient();
   const { data, error } = await supabase
     .from("poultryedos_sales")
-    .select("*, poultryedos_customers(name, phone)")
+    .select("*, poultryedos_customers(name, phone), poultryedos_flocks(batch_code)")
     .eq("tenant_id", tenantId)
     .order("sale_date", { ascending: false })
     .limit(limit);
   if (error) throw error;
   return (data ?? []) as unknown as (Sale & {
     poultryedos_customers: { name: string; phone: string | null } | null;
+    poultryedos_flocks: { batch_code: string } | null;
   })[];
 }
 

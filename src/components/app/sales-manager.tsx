@@ -4,10 +4,11 @@ import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Printer, Download } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import type { Customer, PaymentMethod, Sale, SaleProduct } from "@/lib/database.types";
+import type { Customer, Flock, PaymentMethod, Sale, SaleProduct } from "@/lib/database.types";
 import { formatMoney } from "@/lib/money";
 import { PrintHeader, PrintSection, PrintRow } from "@/components/app/print-report";
 import { downloadSimpleReportPdf } from "@/lib/pdf/simple-report";
+import { BatchReassign } from "@/components/app/batch-reassign";
 
 const PRODUCTS: { value: SaleProduct; label: string }[] = [
   { value: "eggs", label: "Eggs" },
@@ -21,7 +22,8 @@ const PRODUCTS: { value: SaleProduct; label: string }[] = [
 
 export function SalesManager({
   tenantId,
-  flockId,
+  flocks,
+  defaultFlockId,
   currency,
   quickDailyTotalCents,
   sales,
@@ -30,16 +32,18 @@ export function SalesManager({
   farmName,
 }: {
   tenantId: string;
-  flockId: string | null;
+  flocks: Flock[];
+  defaultFlockId: string | null;
   currency: string;
   quickDailyTotalCents: number;
-  sales: (Sale & { poultryedos_customers: { name: string; phone: string | null } | null })[];
+  sales: (Sale & { poultryedos_customers: { name: string; phone: string | null } | null; poultryedos_flocks: { batch_code: string } | null })[];
   customers: Customer[];
   tenantName: string;
   farmName: string;
 }) {
   const router = useRouter();
   const [adding, setAdding] = useState(false);
+  const [flockId, setFlockId] = useState(defaultFlockId ?? "");
   const [product, setProduct] = useState<SaleProduct>("eggs");
   const [quantity, setQuantity] = useState("");
   const [unit, setUnit] = useState("trays");
@@ -50,6 +54,7 @@ export function SalesManager({
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [editingBatchFor, setEditingBatchFor] = useState<string | null>(null);
 
   const itemizedTotal = sales.reduce((sum, s) => sum + s.total_amount_cents, 0);
   const grandTotal = quickDailyTotalCents + itemizedTotal;
@@ -86,7 +91,7 @@ export function SalesManager({
 
     const { error } = await supabase.from("poultryedos_sales").insert({
       tenant_id: tenantId,
-      flock_id: flockId,
+      flock_id: flockId || null,
       customer_id: resolvedCustomerId,
       product,
       quantity: Number(quantity),
@@ -127,9 +132,10 @@ export function SalesManager({
       ],
       table: {
         title: "Itemized sales",
-        head: ["Date", "Client", "Contacts", "Payment", "Qty", "Cost"],
+        head: ["Date", "Batch", "Client", "Contacts", "Payment", "Qty", "Cost"],
         body: sales.map((s) => [
           new Date(s.sale_date).toLocaleDateString("en-KE", { day: "numeric", month: "short" }),
+          s.poultryedos_flocks?.batch_code ?? "General",
           s.poultryedos_customers?.name ?? "Walk-in",
           s.poultryedos_customers?.phone ?? "—",
           s.payment_method,
@@ -182,6 +188,23 @@ export function SalesManager({
 
       {adding && (
         <form onSubmit={handleSubmit} className="mt-4 space-y-4 rounded-xl border border-line bg-paper-raised p-4">
+          {flocks.length > 0 && (
+            <div>
+              <label className="text-sm font-medium text-ink-soft">Batch</label>
+              <select
+                value={flockId}
+                onChange={(e) => setFlockId(e.target.value)}
+                className="mt-1 w-full rounded-lg border border-line-strong px-3 py-2 text-sm outline-none focus:border-primary"
+              >
+                <option value="">General (not batch-specific)</option>
+                {flocks.map((f) => (
+                  <option key={f.id} value={f.id}>
+                    {f.batch_code} {f.status !== "active" ? `(${f.status.replace("_", " ")})` : ""}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="text-sm font-medium text-ink-soft">Product</label>
@@ -316,17 +339,46 @@ export function SalesManager({
           </p>
         )}
         {sales.map((s) => (
-          <div key={s.id} className="flex items-center justify-between rounded-xl border border-line bg-paper-raised px-4 py-3 text-sm">
-            <div>
-              <p className="font-medium text-ink capitalize">
-                {s.product.replace("_", " ")} · {s.quantity} {s.unit}
-              </p>
-              <p className="text-xs text-ink-faint">
-                {new Date(s.sale_date).toLocaleDateString("en-KE", { day: "numeric", month: "short" })}
-                {s.poultryedos_customers && ` · ${s.poultryedos_customers.name}`}
-              </p>
+          <div key={s.id} className="rounded-xl border border-line bg-paper-raised px-4 py-3 text-sm">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium text-ink capitalize">
+                  {s.product.replace("_", " ")} · {s.quantity} {s.unit}
+                </p>
+                <p className="text-xs text-ink-faint">
+                  {new Date(s.sale_date).toLocaleDateString("en-KE", { day: "numeric", month: "short" })}
+                  {" · "}
+                  {s.poultryedos_flocks?.batch_code ?? "General"}
+                  {flocks.length > 0 && (
+                    <>
+                      {" "}
+                      <button
+                        type="button"
+                        onClick={() => setEditingBatchFor(editingBatchFor === s.id ? null : s.id)}
+                        className="text-primary hover:underline"
+                      >
+                        (change)
+                      </button>
+                    </>
+                  )}
+                  {s.poultryedos_customers && ` · ${s.poultryedos_customers.name}`}
+                </p>
+              </div>
+              <span className="font-medium text-ink">{formatMoney(s.total_amount_cents, currency)}</span>
             </div>
-            <span className="font-medium text-ink">{formatMoney(s.total_amount_cents, currency)}</span>
+            {editingBatchFor === s.id && (
+              <BatchReassign
+                currentFlockId={s.flock_id}
+                flocks={flocks}
+                onSave={async (newFlockId) => {
+                  const supabase = createClient();
+                  await supabase.from("poultryedos_sales").update({ flock_id: newFlockId }).eq("id", s.id);
+                  setEditingBatchFor(null);
+                  router.refresh();
+                }}
+                onCancel={() => setEditingBatchFor(null)}
+              />
+            )}
           </div>
         ))}
       </div>
@@ -346,6 +398,7 @@ export function SalesManager({
             <thead>
               <tr className="border-b border-black/30 text-left">
                 <th className="py-1 pr-2">Date</th>
+                <th className="py-1 pr-2">Batch</th>
                 <th className="py-1 pr-2">Client</th>
                 <th className="py-1 pr-2">Contacts</th>
                 <th className="py-1 pr-2">Payment</th>
@@ -359,6 +412,7 @@ export function SalesManager({
                   <td className="py-1 pr-2">
                     {new Date(s.sale_date).toLocaleDateString("en-KE", { day: "numeric", month: "short" })}
                   </td>
+                  <td className="py-1 pr-2">{s.poultryedos_flocks?.batch_code ?? "General"}</td>
                   <td className="py-1 pr-2">{s.poultryedos_customers?.name ?? "Walk-in"}</td>
                   <td className="py-1 pr-2">{s.poultryedos_customers?.phone ?? "—"}</td>
                   <td className="py-1 pr-2 capitalize">{s.payment_method}</td>
