@@ -673,6 +673,33 @@ looks for alongside the Web App Manifest. `npx tsc --noEmit`,
 `npx eslint .`, `npm run build` all clean; the emitted meta tags were
 confirmed directly in the build output.
 
+**That fix itself then regressed the regular browser tab** — reported
+directly, and a real miss on my part: `viewport-fit=cover` isn't scoped
+to standalone/installed mode, it's a single global flag, so the moment
+it's set, `env(safe-area-inset-*)` stops being `0` **everywhere**,
+including a plain browser tab (Safari in particular can report a
+non-zero safe-area once its own chrome auto-hides during scroll). That
+meant the padding added for the PWA case was now also quietly appearing
+in normal browsing, where it had never been designed or tested for.
+
+Fixed properly this time: `viewport-fit=cover` stays (it's required for
+`env()` to ever produce a real value in standalone mode at all — there's
+no way to scope the meta tag itself), but every place that *consumes*
+those safe-area values — the header's top padding, the main content's
+bottom padding, and the bottom nav's own
+`pb-[env(safe-area-inset-bottom)]` (which predates this session's PWA
+work and was silently inert until the meta-tag fix made it live
+everywhere too) — is now wrapped in Tailwind's arbitrary media-query
+variant, `[@media(display-mode:standalone)]:`, so the extra padding only
+ever applies when the page is actually running as an installed app.
+Confirmed directly in the compiled CSS output that all four rules land
+inside a real `@media (display-mode:standalone)` block; a plain browser
+tab now renders with exactly the padding values it had before any of
+this PWA work touched the file (`py-3`, `pb-20`, no bottom-nav
+safe-area padding at all), and only a standalone install gets the
+safe-area treatment. `npx tsc --noEmit`, `npx eslint .`, `npm run build`
+all clean.
+
 ## Real-world requirements audit
 
 A stakeholder (Naomi) sent a plain-language list of what a Brooding record,

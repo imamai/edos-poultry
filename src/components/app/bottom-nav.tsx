@@ -98,7 +98,7 @@ export function BottomNav({
     .sort((a, b) => b.length - a.length)[0];
 
   return (
-    <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-paper-raised pb-[env(safe-area-inset-bottom)]">
+    <nav className="fixed inset-x-0 bottom-0 z-30 border-t border-line bg-paper-raised [@media(display-mode:standalone)]:pb-[env(safe-area-inset-bottom)]">
       <div className={`mx-auto flex ${containerClass}`}>
         {items.map((item) => {
           const active = item.href === activeHref;
